@@ -64,7 +64,8 @@ const FocusItem = ({ task, onComplete, onUnfocus }: { task: any, onComplete: any
     return () => clearTimeout(saveToDb);
   }, [localProgress]);
 
-  const handleDialDrag = (event: any, info: any) => {
+  // SỬA LỖI 1: Đổi 'event' thành '_' vì không dùng
+  const handleDialDrag = (_: any, info: any) => {
     const step = Math.floor(info.offset.y / 15); 
     if (step !== 0) {
       const newValue = Math.min(Math.max(0, task.progress + step), task.quantity);
@@ -77,7 +78,8 @@ const FocusItem = ({ task, onComplete, onUnfocus }: { task: any, onComplete: any
 
   const handleNumberTap = () => {
     if (task.quantity <= 10 && localProgress < task.quantity) {
-      setLocalProgress(prev => prev + 1);
+      // SỬA LỖI 2: Thêm kiểu (prev: number)
+      setLocalProgress((prev: number) => prev + 1);
       triggerHaptic('tick');
     }
   };
@@ -86,6 +88,7 @@ const FocusItem = ({ task, onComplete, onUnfocus }: { task: any, onComplete: any
     if (localProgress >= task.quantity) return;
     triggerHaptic('tick');
     timerRef.current = setInterval(() => {
+      // SỬA LỖI 3: Thêm kiểu (prev: number)
       setLocalProgress((prev: number) => {
         if (prev >= task.quantity) {
           clearInterval(timerRef.current);
@@ -130,31 +133,25 @@ const FocusItem = ({ task, onComplete, onUnfocus }: { task: any, onComplete: any
 
 // --- 3. MAIN COMPONENT (SAFE QUERY MODE) ---
 export const FocusZone = () => {
-  // Lấy TOÀN BỘ dữ liệu về trước (Safe Query)
   const allEntries = useLiveQuery(() => db.entries.toArray()) || [];
 
-  // Lọc 1: Tiêu điểm Active (Lọc bằng JS thay vì DB Index)
   const focusTasks = allEntries
     .filter(item => item.type === 'task' && item.status === 'active' && item.isFocus === true)
     .reverse();
 
-  // Lọc 2: Ký ức ngủ quên (Memory)
   const memories = React.useMemo(() => {
     const now = new Date();
-    const threshold = new Date(now.setDate(now.getDate() - 28)); // 28 ngày trước
+    const threshold = new Date(now.setDate(now.getDate() - 28)); 
 
     const oldOnes = allEntries.filter(e => {
-      // Chỉ lấy Bookmark + Có ngày cập nhật cũ hơn 28 ngày
       if (!e.isBookmarked) return false;
       const lastUpdate = new Date(e.updatedAt || e.createdAt);
       return lastUpdate < threshold;
     });
 
-    // Shuffle và lấy 4
     return oldOnes.sort(() => 0.5 - Math.random()).slice(0, 4);
-  }, [allEntries]); // Chỉ tính lại khi allEntries thay đổi
+  }, [allEntries]);
 
-  // Logic Hành động
   const completeTask = async (id: number, task: any) => {
     await db.entries.update(id, { status: 'completed', completedAt: new Date(), progress: 100 });
     if (task.frequency && task.frequency !== 'once') { await addXp('habit_log'); } 
@@ -164,12 +161,11 @@ export const FocusZone = () => {
   const unfocusTask = async (id: number) => { await db.entries.update(id, { isFocus: false }); };
 
   const reflectMemory = async (id: number) => {
-    await db.entries.update(id, { updatedAt: new Date() }); // Reset Entropy
+    await db.entries.update(id, { updatedAt: new Date() });
     await addXp('thought');
     if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
   };
 
-  // EMPTY STATE
   if (focusTasks.length === 0 && memories.length === 0) {
     return (
       <div className="w-full py-4 px-4 bg-white/50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2 mt-2">
@@ -181,8 +177,6 @@ export const FocusZone = () => {
 
   return (
     <div className="w-full flex flex-col gap-3">
-      
-      {/* SECTION 1: MEMORIES */}
       <AnimatePresence>
         {memories.length > 0 && (
           <motion.div layout className="grid grid-cols-2 gap-2 mb-2">
@@ -193,7 +187,6 @@ export const FocusZone = () => {
         )}
       </AnimatePresence>
 
-      {/* SEPARATOR */}
       {memories.length > 0 && focusTasks.length > 0 && (
          <div className="flex items-center justify-center gap-2 opacity-50 my-1">
             <span className="h-[1px] w-4 bg-slate-300"></span>
@@ -202,7 +195,6 @@ export const FocusZone = () => {
          </div>
       )}
 
-      {/* SECTION 2: FOCUS TASKS */}
       {focusTasks.length > 0 && (
         <>
           <div className="flex items-center justify-center gap-2 mb-1 opacity-80">

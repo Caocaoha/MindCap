@@ -2,8 +2,8 @@ import { db } from '../db';
 
 // 1. CẤU HÌNH ĐIỂM SỐ (DIMINISHING RETURNS)
 const SCORING_RULES = {
-  identity_fill: { tiers: [15, 2, 2], limits: [4, 100] }, // 4 lần đầu 15, sau đó 2
-  todo_done:     { tiers: [5, 2, 1],  limits: [4, 9] },   // 1-4: 5đ, 5-9: 2đ, 10+: 1đ
+  identity_fill: { tiers: [15, 2, 2], limits: [4, 100] }, 
+  todo_done:     { tiers: [5, 2, 1],  limits: [4, 9] },   
   habit_log:     { tiers: [5, 2, 1],  limits: [4, 9] },
   todo_new:      { tiers: [3, 1, 0.5], limits: [4, 9] },
   thought:       { tiers: [3, 1, 0.5], limits: [4, 9] },
@@ -12,6 +12,15 @@ const SCORING_RULES = {
 
 // 2. CẤU HÌNH LEVEL
 const BASE_LEVELS = [0, 50, 200, 400, 800, 1200, 1600, 2000]; // Level 0 -> 7
+
+// Hàm tính Danh hiệu dựa trên Level
+const getRankTitle = (level: number): string => {
+  if (level <= 3) return "Newbie";
+  if (level <= 7) return "Explorer";
+  if (level <= 14) return "Manager";
+  if (level <= 24) return "Architect";
+  return "Visionary";
+};
 
 export const getLevelInfo = (totalCme: number) => {
   let level = 0;
@@ -47,7 +56,14 @@ export const getLevelInfo = (totalCme: number) => {
     
   const progress = Math.min(100, Math.max(0, ((totalCme - currentLevelBase) / (nextXp - currentLevelBase)) * 100));
 
-  return { level, currentCme: totalCme, nextCme: nextXp, progress };
+  // Trả về thêm thuộc tính 'type'
+  return { 
+    level, 
+    currentCme: totalCme, 
+    nextCme: nextXp, 
+    progress,
+    type: getRankTitle(level) // <--- ĐÂY LÀ PHẦN CÒN THIẾU
+  };
 };
 
 // 3. HÀM TÍNH ĐIỂM & GHI LOG
@@ -61,9 +77,7 @@ export const addXp = async (actionType: keyof typeof SCORING_RULES) => {
     .filter(log => log.timestamp >= today)
     .count();
 
-  // Tính điểm dựa trên số lần đã làm (count)
-  // count = 0 -> Lần 1 -> Tier 0
-  // count = 4 -> Lần 5 -> Tier 1
+  // Tính điểm dựa trên số lần đã làm
   const rule = SCORING_RULES[actionType];
   let points = 0;
 
@@ -72,7 +86,7 @@ export const addXp = async (actionType: keyof typeof SCORING_RULES) => {
   } else if (rule.limits[1] && count < rule.limits[1]) {
     points = rule.tiers[1];
   } else {
-    points = rule.tiers[rule.tiers.length - 1]; // Lấy mức cuối cùng
+    points = rule.tiers[rule.tiers.length - 1]; 
   }
 
   // Lưu vào DB
@@ -82,7 +96,7 @@ export const addXp = async (actionType: keyof typeof SCORING_RULES) => {
     timestamp: new Date()
   });
 
-  // BẮN SỰ KIỆN ĐỂ UI HIỂN THỊ (Custom Event)
+  // BẮN SỰ KIỆN ĐỂ UI HIỂN THỊ
   const event = new CustomEvent('cme-gained', { detail: { points, actionType } });
   window.dispatchEvent(event);
 
