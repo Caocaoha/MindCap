@@ -5,16 +5,17 @@ import {
   Smile, Meh, Frown, Heart, 
   Send, Layers, XCircle, RotateCcw, Edit2, Minimize2 
 } from 'lucide-react';
-import { db } from '../db';
+import { db, type Entry } from '../db'; // Import Entry type
 import { addXp } from '../utils/gamification';
 import { smartParser, type NlpResult } from '../utils/nlpParser';
+import { echoEngine } from '../utils/echoEngine'; // Import Echo Engine
 import { EditModal } from './EditModal';
 import clsx from 'clsx';
 
 type SectorType = 'TASK_NORMAL' | 'TASK_IMPORTANT' | 'TASK_URGENT' | 'TASK_CRITICAL' | 
                   'MOOD_HAPPY' | 'MOOD_NEUTRAL' | 'MOOD_SAD' | null;
 
-// --- ACTION TOAST (FIXED ALIGNMENT) ---
+// --- ACTION TOAST (FIXED CENTER) ---
 const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any) => {
   useEffect(() => { const t = setTimeout(onClose, 5000); return () => clearTimeout(t); }, [onClose]);
   
@@ -49,7 +50,13 @@ const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any
 };
 
 // --- MAIN COMPONENT ---
-export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean) => void }) => {
+interface MindInputProps {
+  onFocusChange?: (focused: boolean) => void;
+  derivedEntry?: Entry | null;      // Entry gốc để phái sinh (nếu có)
+  onClearDerived?: () => void;      // Hàm xóa state gốc sau khi lưu
+}
+
+export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindInputProps) => {
   const [input, setInput] = useState('');
   const [activeSector, setActiveSector] = useState<SectorType>(null);
   const [activeRail, setActiveRail] = useState<'TASK' | 'MOOD' | null>(null);
@@ -101,9 +108,13 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
     
     try {
       let id; let type: 'task' | 'mood'; let moodScore = 0;
+      let actionTypeForLog: any = 'thought_add';
+
       if (targetSector.startsWith('TASK')) {
         type = 'task';
+        actionTypeForLog = 'task_create'; // [cite: 71]
         const priorityMap: Record<string, string> = { 'TASK_NORMAL': 'normal', 'TASK_IMPORTANT': 'important', 'TASK_URGENT': 'urgent', 'TASK_CRITICAL': 'critical' };
+        
         id = await db.entries.add({ 
           content: input, type: 'task', status: 'active', isFocus: false, createdAt: now, updatedAt: now,
           priority: priorityMap[targetSector] as any || 'normal', 
@@ -111,24 +122,56 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
           frequency: (finalNlp.frequency as any) || 'once', frequency_detail: finalNlp.frequency_detail || '', 
           is_nlp_hidden: false, mood_score: 0, progress: 0, isBookmarked: false 
         });
-        await addXp('todo_new');
       } else {
         type = 'mood';
+        actionTypeForLog = 'thought_add'; // [cite: 78]
         if (targetSector.includes('HAPPY')) moodScore = 1 + moodLevel;
         if (targetSector.includes('SAD')) moodScore = -(1 + moodLevel);
         if (targetSector.includes('NEUTRAL')) moodScore = 0;
+        
         id = await db.entries.add({ 
           content: input, type: 'mood', status: 'active', isFocus: false, createdAt: now, updatedAt: now,
           mood_score: moodScore, quantity: 1, unit: 'lần', frequency: 'once', is_nlp_hidden: true, priority: 'normal', progress: 0, isBookmarked: false 
         });
-        await addXp('thought');
+        
+        if (type === 'mood' && moodScore !== 0) {
+           await addXp('mood_log'); // Log thêm điểm mood [cite: 81]
+        }
       }
+      
+      // --- INTEGRATION: ECHO ENGINE & DERIVATION ---
+      
+      // 1. Explicit Link (Phái sinh) 
+      if (derivedEntry?.id) {
+        await db.echo_links.add({
+          sourceId: derivedEntry.id, 
+          targetId: id as number,    
+          type: 'structural',       
+          strength: 3,               // x3 CPI
+          createdAt: new Date()
+        });
+        console.log("🔗 Created Explicit Link (x3 CPI)");
+        onClearDerived?.(); // Reset state phái sinh
+      }
+
+      // 2. Implicit/Semantic Link (Chạy ngầm)
+      const newEntryFull = await db.entries.get(id as number);
+      if (newEntryFull) {
+         echoEngine.processEntry(newEntryFull).catch(err => console.error("Echo Error:", err));
+      }
+      // ---------------------------------------------
+
       triggerHaptic('success');
+      await addXp(actionTypeForLog); // Log điểm Gamification
+      
       setLastSaved({ id, content: input, type, mood_score: moodScore, ...finalNlp });
       setToast({ msg: type === 'task' ? 'Đã lưu Task' : 'Đã lưu Mood', type: 'success' });
+      
       setInput(''); setActiveSector(null); setActiveRail(null); setMoodLevel(0);
       taskX.set(0); taskY.set(0); moodX.set(0); moodY.set(0);
-      if (!isKeyboardActive) handleCollapse(); else { setIsKeyboardActive(false); setTimeout(() => setIsKeyboardActive(true), 150); }
+      
+      if (!isKeyboardActive) handleCollapse(); 
+      else { setIsKeyboardActive(false); setTimeout(() => setIsKeyboardActive(true), 150); }
     } catch (err: any) { setToast({ msg: `Lỗi: ${err.message}`, type: 'error' }); }
   };
 
@@ -146,6 +189,19 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
       <AnimatePresence>{toast && <ActionToast message={toast.msg} type={toast.type} onUndo={handleUndo} onEdit={()=>setShowEditModal(true)} onClose={()=>setToast(null)} />}</AnimatePresence>
       {showEditModal && lastSaved && <EditModal entry={lastSaved} onClose={()=>setShowEditModal(false)} onSave={handleEditSave} />}
       
+      {/* HIỂN THỊ TRẠNG THÁI PHÁI SINH (Nếu có) */}
+      <AnimatePresence>
+        {derivedEntry && (
+          <motion.div 
+            initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}
+            className="absolute top-24 z-20 bg-blue-50 text-blue-600 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm border border-blue-100 max-w-[80%]"
+          >
+            <span className="truncate max-w-[150px]">Từ: "{derivedEntry.content}"</span>
+            <button onClick={onClearDerived} className="p-1 hover:bg-blue-100 rounded-full"><XCircle size={14}/></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* INPUT CARD */}
       <motion.div 
         drag="y" dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ bottom: 0.2, top: 0 }} onDragEnd={handleDragEnd}
@@ -160,7 +216,7 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
       {/* RAILS CONTAINER */}
       <div className="w-full max-w-[500px] flex items-center mt-20 px-10 relative z-30">
         
-        {/* TASK RAIL (FIXED LAYOUT) */}
+        {/* TASK RAIL (FIXED SQUARE LAYOUT) */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center justify-center">
           <AnimatePresence>
             {activeRail === 'TASK' && (
@@ -197,8 +253,7 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
   );
 };
 
-// --- FIXED TARGET ICON COMPONENT ---
-// Icon không bị méo, Label nằm đè lên
+// --- FIXED TARGET ICON COMPONENT (LABEL OVERLAY) ---
 const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => { 
   const isTarget = active === sector; 
   return (
@@ -206,7 +261,6 @@ const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => {
       <div className={clsx("w-12 h-12 rounded-xl border flex items-center justify-center transition-all shadow-sm bg-white shrink-0 z-10", isTarget ? "border-slate-400 ring-4 ring-blue-50 shadow-md" : "border-slate-100 opacity-80")}>
         <Icon size={24} className={isTarget ? color : "text-slate-300"} strokeWidth={2.5} />
       </div>
-      {/* Label nằm đè lên, z-index cao hơn để không bị icon khác che */}
       <div className="absolute -bottom-4 z-20">
          <span className={clsx("text-[10px] font-black uppercase tracking-tighter text-center px-1 py-0.5 rounded bg-white/80 backdrop-blur-sm", isTarget ? "text-slate-900 shadow-sm" : "text-slate-300")}>{label}</span>
       </div>
@@ -214,7 +268,7 @@ const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => {
   ); 
 };
 
-// Dynamic Icon (cho Mood) giữ nguyên logic cũ vì nó xoay tròn
+// Dynamic Icon (cho Mood)
 const DynamicTargetIcon = ({ sector, icon: Icon, label, x, y, active, color, scale }: any) => { 
   const isTarget = active === sector; 
   return (

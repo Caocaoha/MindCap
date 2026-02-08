@@ -1,7 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 
 // 1. DATA MODELS INTERFACES
-// Định nghĩa chặt chẽ để TypeScript hỗ trợ autocomplete
 
 export interface Entry {
   id?: number;
@@ -18,9 +17,7 @@ export interface Entry {
   unit: string;          
   
   // --- STRATEGY & SCHEDULING ---
-  // Priority: Dùng cho Sa bàn Eisenhower
   priority: 'normal' | 'important' | 'urgent' | 'critical';
-  // Frequency: Dùng cho việc lặp lại
   frequency: 'once' | 'daily' | 'weekly' | 'monthly';
   frequency_detail?: string; 
   
@@ -28,76 +25,77 @@ export interface Entry {
   mood_score: number;
   questionId?: number;
   
-  // --- MEMORY & ENTROPY (V4+) ---
-  isBookmarked: boolean;  // True = Hạt giống ký ức (Không bị mờ)
+  // --- MEMORY & ENTROPY ---
+  isBookmarked: boolean;  
   bookmarkReason?: string;
-  updatedAt: Date;        // Thời gian tương tác cuối -> Tính Entropy
-  
-  // --- TIMESTAMPS ---
+  updatedAt: Date;        
   createdAt: Date;
   completedAt?: Date;
   
   // --- SYSTEM FLAGS ---
-  is_nlp_hidden: boolean; // Ẩn khỏi dòng thời gian nếu là input phụ
+  is_nlp_hidden: boolean; 
   metadata?: { [key: string]: any; };
 }
 
 export interface MevLog {
   id?: number;
-  // Các hành động sinh ra điểm CME
-  actionType: 'todo_new' | 'todo_done' | 'habit_log' | 'thought' | 'identity_fill' | 'level_up';
+  // CẬP NHẬT DANH SÁCH ACTION TYPES THEO TÀI LIỆU ARCHETYPE
+  actionType: 
+    // Nhóm TASK (Tử số - Ngoại lực)
+    | 'task_create'    // Tạo việc
+    | 'task_done'      // Hoàn thành việc
+    | 'priority_shift' // Sắp xếp Sa bàn
+    | 'focus_update'   // Cập nhật Tiêu điểm
+    
+    // Nhóm NON-TASK (Mẫu số - Nội lực)
+    | 'thought_add'    // Lưu suy nghĩ
+    | 'identity_fill'  // Trả lời Identity
+    | 'reflect_action' // Tưới nước (Xem lại)
+    | 'mood_log'       // Ghi nhận cảm xúc
+    | 'echo_connect'   // Nối điểm tri thức
+    
+    // System Legacy
+    | 'level_up' | 'todo_new' | 'todo_done' | 'thought' | 'habit_log'; // Giữ lại để tương thích dữ liệu cũ nếu cần
+    
   points: number;
   timestamp: Date;
+}
+
+// BẢNG MỚI: ECHO LINK (Mạng lưới ký ức)
+export interface EchoLink {
+  id?: number;
+  sourceId: number; // Entry gốc
+  targetId: number; // Entry được liên kết
+  type: 'semantic' | 'temporal' | 'structural'; // 3 Cấp độ Echo
+  strength: number; // Độ mạnh: 1 (Implicit), 2 (Semantic), 3 (Explicit)
+  keywords?: string[]; // Từ khóa chung (nếu là Semantic)
+  createdAt: Date;
 }
 
 // 2. DATABASE CLASS CONFIGURATION
 class MindDatabase extends Dexie {
   entries!: Table<Entry>;
   mev_logs!: Table<MevLog>;
+  echo_links!: Table<EchoLink>; // <--- Bảng mới
 
   constructor() {
     super('MindCap_Store');
     
-    // --- VERSION HISTORY & MIGRATION ---
-    // V1-V3: Development
-    // V4: Added Entropy Fields
-    // V5: Added Priority Index
-    // V6: PWA Stability & Data Normalization
-    
-    this.version(6).stores({
-      // Indexing Strategy:
-      // - status, type, isFocus: Core Filters
-      // - priority: Sorting cho Sa bàn
-      // - updatedAt: Query cho Entropy & Resurfacing
-      // - isBookmarked: Query cho Resurfacing
+    // Version 7: Added echo_links
+    this.version(7).stores({
       entries: '++id, type, status, isFocus, isBookmarked, priority, createdAt, updatedAt', 
-      mev_logs: '++id, actionType, timestamp'
-    }).upgrade(async tx => {
-      // MIGRATION SCRIPT: "Chữa lành" dữ liệu cũ
-      // Chạy 1 lần duy nhất khi User update lên phiên bản mới
-      await tx.table('entries').toCollection().modify(entry => {
-        const now = new Date();
-        
-        // 1. Fix Entropy: Nếu thiếu updatedAt -> lấy createdAt hoặc Now
-        if (!entry.updatedAt) entry.updatedAt = entry.createdAt || now;
-        
-        // 2. Fix Bookmark: Mặc định là false để tránh lỗi filter
-        if (entry.isBookmarked === undefined) entry.isBookmarked = false;
-        
-        // 3. Fix Priority: Mặc định là normal để Sa bàn phân loại đúng
-        if (!entry.priority) entry.priority = 'normal';
-        
-        // 4. Fix Frequency: Mặc định là once
-        if (!entry.frequency) entry.frequency = 'once';
-      });
+      mev_logs: '++id, actionType, timestamp',
+      echo_links: '++id, sourceId, targetId, type, createdAt' // Index cho truy vấn 2 chiều
+    }).upgrade(async () => {
+      // Migration script nếu cần thiết
     });
   }
 
-  // Panic Button: Xóa sạch dữ liệu (Dùng trong Settings)
   async nuke() {
-    await this.transaction('rw', this.entries, this.mev_logs, async () => {
+    await this.transaction('rw', this.entries, this.mev_logs, this.echo_links, async () => {
       await this.entries.clear();
       await this.mev_logs.clear();
+      await this.echo_links.clear();
     });
   }
 }

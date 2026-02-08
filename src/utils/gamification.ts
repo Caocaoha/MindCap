@@ -1,89 +1,82 @@
 import { db } from '../db';
 
-// 1. CẤU HÌNH ĐIỂM SỐ
-const SCORING_RULES = {
-  identity_fill: { tiers: [15, 2, 2], limits: [4, 100] }, 
-  todo_done:     { tiers: [5, 2, 1],  limits: [4, 9] },   
-  habit_log:     { tiers: [5, 2, 1],  limits: [4, 9] },
-  todo_new:      { tiers: [3, 1, 0.5], limits: [4, 9] },
-  thought:       { tiers: [3, 1, 0.5], limits: [4, 9] },
-  level_up:      { tiers: [0], limits: [] }
+// CẬP NHẬT DANH SÁCH ACTION TYPE ĐẦY ĐỦ
+export type ActionType = 
+  // Nhóm cũ (Legacy)
+  | 'todo_new' | 'todo_done' | 'habit_log' | 'thought' | 'identity_fill' | 'level_up'
+  // Nhóm mới (Archetype)
+  | 'task_create'    // Tạo việc
+  | 'task_done'      // Hoàn thành việc
+  | 'priority_shift' // Sắp xếp Sa bàn
+  | 'focus_update'   // Cập nhật Tiêu điểm
+  | 'thought_add'    // Lưu suy nghĩ
+  | 'reflect_action' // Tưới nước (Xem lại)
+  | 'mood_log'       // Ghi nhận cảm xúc
+  | 'echo_connect';  // Nối điểm tri thức
+
+export const LEVEL_THRESHOLDS = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500, 5500];
+
+// CẤU HÌNH ĐIỂM SỐ CHI TIẾT
+const POINTS: Record<ActionType, number> = {
+  // Legacy
+  todo_new: 2,
+  todo_done: 10,
+  habit_log: 5,
+  thought: 3,
+  identity_fill: 15,
+  level_up: 0,
+  
+  // New Archetype Actions
+  task_create: 2,      // Tạo task mới
+  task_done: 10,       // Hoàn thành task (Quan trọng)
+  priority_shift: 1,   // Sắp xếp lại thứ tự (Eisenhower)
+  focus_update: 2,     // Đẩy vào tiêu điểm
+  thought_add: 3,      // Viết suy nghĩ/nhật ký
+  reflect_action: 1,   // Xem lại bài cũ
+  mood_log: 3,         // Ghi nhận cảm xúc
+  echo_connect: 5      // Kết nối tri thức
 };
 
-// 2. CẤU HÌNH LEVEL
-const BASE_LEVELS = [0, 50, 200, 400, 800, 1200, 1600, 2000]; 
-
-const getRankTitle = (level: number): string => {
-  if (level <= 3) return "Newbie";
-  if (level <= 7) return "Explorer";
-  if (level <= 14) return "Manager";
-  if (level <= 24) return "Architect";
-  return "Visionary";
-};
-
-export const getLevelInfo = (totalCme: number) => {
+export const getLevelInfo = (totalXp: number) => {
   let level = 0;
-  let nextXp = 0;
-
-  for (let i = 0; i < BASE_LEVELS.length; i++) {
-    if (totalCme >= BASE_LEVELS[i]) level = i;
+  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
+    if (totalXp >= LEVEL_THRESHOLDS[i]) level = i;
     else break;
   }
+  const currentLevelXp = LEVEL_THRESHOLDS[level];
+  const nextLevelXp = LEVEL_THRESHOLDS[level + 1] || currentLevelXp * 1.5;
+  const progress = Math.min(100, Math.max(0, ((totalXp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100));
 
-  if (totalCme >= 2000) {
-    const excess = totalCme - 2000;
-    const extraLevels = Math.floor(excess / 500) + 1;
-    level = 7 + extraLevels;
-  }
+  let type = "Newbie";
+  if (level >= 3) type = "Explorer"; 
+  if (level >= 8) type = "Master";
 
-  if (level < 7) {
-    nextXp = BASE_LEVELS[level + 1];
-  } else {
-    nextXp = 2000 + ((level - 7) * 500);
-  }
-
-  const currentLevelBase = level < 8 ? BASE_LEVELS[level] : 2000 + (level - 8) * 500;
-  const progress = Math.min(100, Math.max(0, ((totalCme - currentLevelBase) / (nextXp - currentLevelBase)) * 100));
-
-  return { level, currentCme: totalCme, nextCme: nextXp, progress, type: getRankTitle(level) };
+  return { level, progress, nextLevelXp, type };
 };
 
-// 3. HÀM TÍNH ĐIỂM & LOGIC LEVEL UP (UPDATE)
-export const addXp = async (actionType: keyof typeof SCORING_RULES) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+export const addXp = async (actionType: ActionType) => {
+  const points = POINTS[actionType] || 0;
+  
+  // Lưu vào DB
+  await db.mev_logs.add({
+    actionType,
+    points,
+    timestamp: new Date()
+  });
 
-  // Lấy tổng điểm hiện tại để tính Level cũ
+  // Bắn sự kiện để UI (Toast/Confetti) bắt được
+  const event = new CustomEvent('cme-gained', { detail: { points, actionType } });
+  window.dispatchEvent(event);
+
+  // Check Level Up Logic (Giữ nguyên logic cũ hoặc nâng cấp sau)
   const allLogs = await db.mev_logs.toArray();
-  const currentTotal = allLogs.reduce((sum, log) => sum + log.points, 0);
-  const oldLevel = getLevelInfo(currentTotal).level;
+  const totalXp = allLogs.reduce((sum, log) => sum + log.points, 0);
+  const currentLevelInfo = getLevelInfo(totalXp);
+  const prevTotalXp = totalXp - points;
+  const prevLevelInfo = getLevelInfo(prevTotalXp);
 
-  // Tính điểm mới
-  const count = await db.mev_logs.where('actionType').equals(actionType).filter(log => log.timestamp >= today).count();
-  const rule = SCORING_RULES[actionType];
-  let points = 0;
-
-  if (count < rule.limits[0]) points = rule.tiers[0];
-  else if (rule.limits[1] && count < rule.limits[1]) points = rule.tiers[1];
-  else points = rule.tiers[rule.tiers.length - 1]; 
-
-  if (points > 0) {
-    await db.mev_logs.add({ actionType, points, timestamp: new Date() });
-    
-    // Kiểm tra Level mới
-    const newTotal = currentTotal + points;
-    const newLevel = getLevelInfo(newTotal).level;
-
-    // Nếu lên cấp -> Bắn pháo hoa
-    if (newLevel > oldLevel) {
-      const levelEvent = new CustomEvent('level-up', { detail: { level: newLevel } });
-      window.dispatchEvent(levelEvent);
-    }
-
-    // Bắn thông báo điểm
-    const event = new CustomEvent('cme-gained', { detail: { points, actionType } });
-    window.dispatchEvent(event);
+  if (currentLevelInfo.level > prevLevelInfo.level) {
+     const levelUpEvent = new CustomEvent('level-up', { detail: { level: currentLevelInfo.level } });
+     window.dispatchEvent(levelUpEvent);
   }
-
-  return points;
 };

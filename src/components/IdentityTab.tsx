@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Fingerprint, ChevronDown, PenTool } from 'lucide-react';
 import { addXp } from '../utils/gamification';
