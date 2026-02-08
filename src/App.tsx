@@ -18,13 +18,13 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <div className="w-full h-screen bg-white flex flex-col font-sans text-slate-900 mx-auto max-w-md shadow-2xl overflow-hidden relative">
+    // FIX: h-[100dvh] giúp app full màn hình chính xác trên Mobile Browser
+    <div className="w-full h-[100dvh] bg-white flex flex-col font-sans text-slate-900 mx-auto max-w-md shadow-2xl overflow-hidden relative">
       
       {/* 1. TOAST */}
       <CmeToast />
 
-      {/* 2. OVERLAYS (MODALS) - Z-INDEX CAO NHẤT */}
-      {/* Để Component tự xử lý Animation bên trong, không bọc motion.div ở đây nữa */}
+      {/* 2. OVERLAYS */}
       <AnimatePresence mode="wait">
         {showIdentity && (
             <IdentityTab onClose={() => setShowIdentity(false)} />

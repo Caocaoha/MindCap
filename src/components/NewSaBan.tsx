@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-// --- TASK CARD (Giữ nguyên) ---
+// ... (Giữ nguyên component TaskItem)
 const TaskItem = ({ task, onMoveFocus, onDelete }: { task: Entry, onMoveFocus: (t: Entry) => void, onDelete: (id: number) => void }) => {
   const x = useMotionValue(0);
   const opacity = useTransform(x, [0, 100], [1, 0]);
@@ -60,18 +60,16 @@ const TaskItem = ({ task, onMoveFocus, onDelete }: { task: Entry, onMoveFocus: (
 export const NewSaBan = () => {
   const [searchTerm, setSearchTerm] = useState('');
   
-  // --- SAFE QUERY MODE ---
-  // Thay vì dùng .where(), ta dùng .toArray() để lấy hết về rồi lọc bằng JS
-  // Cách này KHÔNG bao giờ lỗi dù Index chưa cập nhật
   const allEntries = useLiveQuery(() => db.entries.toArray()) || [];
 
-  // Lọc thủ công (An toàn tuyệt đối)
   const tasks = allEntries
     .filter(item => item.type === 'task' && item.status === 'active' && item.isFocus === false)
     .reverse();
 
-  // Đếm thủ công số lượng Focus
-  const focusCount = allEntries.filter(item => item.isFocus === true).length;
+  // FIX: Chỉ đếm Task đang Active (Chưa xong) và đang trong Focus
+  const focusCount = allEntries.filter(item => 
+    item.isFocus === true && item.status === 'active'
+  ).length;
 
   if (!allEntries) return <div className="p-10 text-center text-slate-300">Đang tải kho việc...</div>;
 
@@ -87,7 +85,7 @@ export const NewSaBan = () => {
 
   const handleMoveToFocus = async (task: Entry) => {
     if (focusCount >= 4) {
-      alert("⚠️ Tiêu điểm đã đầy (4/4)!");
+      alert("⚠️ Tiêu điểm đã đầy (4/4)! Hãy hoàn thành bớt việc.");
       return;
     }
     await db.entries.update(task.id!, { isFocus: true });
