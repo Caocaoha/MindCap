@@ -6,30 +6,34 @@ import { JourneyTab } from './components/JourneyTab';
 import { IdentityTab } from './components/IdentityTab';
 import { CmeToast } from './components/CmeToast'; 
 import { SettingsModal } from './components/SettingsModal';
+import { ReloadPrompt } from './components/ReloadPrompt';
+import { OfflineWarning } from './components/OfflineWarning';
+
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
   Brain, ListTodo, Fingerprint, Map, Settings, PartyPopper 
 } from 'lucide-react';
-import confetti from 'canvas-confetti'; // Import thư viện pháo hoa
+import confetti from 'canvas-confetti';
 
 function App() {
   const [activeTab, setActiveTab] = useState<'todo' | 'mind' | 'journey'>('mind');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showLevelUp, setShowLevelUp] = useState<number | null>(null); // State cho Popup Level Up
+  const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
 
-  // --- LOGIC CONFETTI ---
+  // --- LOGIC CONFETTI KHI LEVEL UP ---
   useEffect(() => {
     const handleLevelUp = (e: any) => {
       const newLevel = e.detail.level;
       setShowLevelUp(newLevel);
       
-      // Bắn pháo hoa 3 đợt
+      // Bắn pháo hoa 3 đợt để tạo hiệu ứng tưng bừng
       const duration = 3000;
       const end = Date.now() + duration;
 
       (function frame() {
+        // Bên trái bắn sang
         confetti({
           particleCount: 3,
           angle: 60,
@@ -37,6 +41,7 @@ function App() {
           origin: { x: 0 },
           colors: ['#3b82f6', '#fbbf24', '#f43f5e']
         });
+        // Bên phải bắn sang
         confetti({
           particleCount: 3,
           angle: 120,
@@ -56,11 +61,17 @@ function App() {
   }, []);
 
   return (
+    // FIX: h-[100dvh] giúp app full màn hình chính xác trên Mobile Browser
     <div className="w-full h-[100dvh] bg-white flex flex-col font-sans text-slate-900 mx-auto max-w-md shadow-2xl overflow-hidden relative">
       
+      {/* --- PWA SAFEGUARDS --- */}
+      <ReloadPrompt />
+      <OfflineWarning />
+      {/* ---------------------- */}
+
       <CmeToast />
 
-      {/* OVERLAYS */}
+      {/* --- OVERLAYS --- */}
       <AnimatePresence mode="wait">
         {showIdentity && <IdentityTab onClose={() => setShowIdentity(false)} />}
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
@@ -88,7 +99,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* HEADER */}
+      {/* --- HEADER --- */}
       <header className="h-16 flex items-center justify-between px-6 border-b border-slate-50 bg-white/80 backdrop-blur-md z-40 relative">
         <button onClick={() => setShowSettings(true)} className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
           <Settings size={20} />
@@ -101,7 +112,7 @@ function App() {
         <div className="w-9 h-9"></div>
       </header>
 
-      {/* MAIN CONTENT */}
+      {/* --- MAIN CONTENT --- */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/30 relative scrollbar-hide flex flex-col">
         {activeTab === 'mind' && (
           <div className="flex flex-col w-full min-h-full pb-10 transition-all duration-500 ease-in-out">
@@ -123,7 +134,7 @@ function App() {
         {activeTab === 'journey' && <JourneyTab />}
       </main>
 
-      {/* BOTTOM NAV */}
+      {/* --- BOTTOM NAV --- */}
       <nav className="h-20 bg-white border-t border-slate-100 flex items-center justify-around px-6 pb-2 z-50">
         <button onClick={() => setActiveTab('todo')} className={`p-3 rounded-2xl transition-all duration-300 ${activeTab === 'todo' ? 'bg-blue-50 text-blue-600 scale-105' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-500'}`}>
           <ListTodo size={26} strokeWidth={activeTab === 'todo' ? 2.5 : 2} />
