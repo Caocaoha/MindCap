@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Entry } from '../db';
 import { motion, useMotionValue, useTransform } from 'framer-motion';

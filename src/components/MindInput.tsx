@@ -1,3 +1,4 @@
+// ... (Các import giữ nguyên)
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useMotionValue, AnimatePresence } from 'framer-motion';
 import { 
@@ -10,13 +11,12 @@ import { addXp } from '../utils/gamification';
 import { smartParser, type NlpResult } from '../utils/nlpParser';
 import clsx from 'clsx';
 
-// --- TYPES ---
 type SectorType = 'TASK_NORMAL' | 'TASK_IMPORTANT' | 'TASK_URGENT' | 'TASK_CRITICAL' | 
                   'MOOD_HAPPY' | 'MOOD_NEUTRAL' | 'MOOD_SAD' | null;
 
-// --- EDIT MODAL (FIXED) ---
+// --- EDIT MODAL (Giữ nguyên như phần trước) ---
 const EditModal = ({ entry, onClose, onSave }: any) => {
-  // FIX: Lấy dữ liệu trực tiếp từ root fields của entry (DB), không lấy từ nlp cũ
+  // ... (Code cũ của EditModal giữ nguyên không đổi)
   const [content, setContent] = useState(entry.content);
   const [qty, setQty] = useState(entry.quantity || 1);
   const [unit, setUnit] = useState(entry.unit || 'lần');
@@ -34,14 +34,7 @@ const EditModal = ({ entry, onClose, onSave }: any) => {
 
   const handleSave = () => { 
     if (entry.type === 'task') {
-      // FIX: Trả về object phẳng (flat) để update trực tiếp vào DB
-      onSave({ 
-        content, 
-        quantity: Number(qty), // Đảm bảo là số
-        unit, 
-        frequency: freq, 
-        frequency_detail: freqDetail 
-      }); 
+      onSave({ content, quantity: Number(qty), unit, frequency: freq, frequency_detail: freqDetail }); 
     } else { 
       onSave({ content, mood_score: moodScore }); 
     } 
@@ -62,20 +55,25 @@ const EditModal = ({ entry, onClose, onSave }: any) => {
   );
 };
 
-// --- TOAST & MAIN COMPONENT ---
-// (Giữ nguyên phần Toast, chỉ sửa logic handleEditSave trong MindInput)
-
+// --- ACTION TOAST (UPDATE POSITION) ---
 const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any) => {
   useEffect(() => { const t = setTimeout(onClose, 5000); return () => clearTimeout(t); }, [onClose]);
   return (
-    <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={clsx("fixed bottom-28 left-1/2 -translate-x-1/2 p-2 rounded-2xl shadow-2xl flex items-center gap-3 z-[100] border backdrop-blur-md pr-4 max-w-[90vw]", type === 'success' ? "bg-slate-900/95 text-white border-slate-700" : "bg-red-50 text-red-600 border-red-100")}>
+    <motion.div 
+      initial={{ opacity: 0, y: 50 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0 }} 
+      // FIX: bottom-36 (khoảng 144px), nằm trên CmeToast, căn giữa
+      className={clsx("fixed bottom-36 left-1/2 -translate-x-1/2 p-2 rounded-2xl shadow-2xl flex items-center gap-3 z-[100] border backdrop-blur-md pr-4 max-w-[90vw] min-w-[280px]", type === 'success' ? "bg-slate-900/95 text-white border-slate-700" : "bg-red-50 text-red-600 border-red-100")}
+    >
       <div className={clsx("p-2 rounded-xl", type === 'success' ? "bg-green-500/20 text-green-400" : "bg-red-100 text-red-500")}>{type === 'success' ? <CheckCircle2 size={20}/> : <XCircle size={20}/>}</div>
-      <div className="flex flex-col min-w-0"><span className="text-sm font-bold truncate">{message}</span>{nlpSummary && <span className="text-[10px] opacity-70 font-mono truncate">{nlpSummary}</span>}</div>
+      <div className="flex flex-col min-w-0 flex-1"><span className="text-sm font-bold truncate">{message}</span>{nlpSummary && <span className="text-[10px] opacity-70 font-mono truncate">{nlpSummary}</span>}</div>
       {type === 'success' && (<div className="flex items-center gap-1 ml-auto pl-3 border-l border-white/10"><button onClick={onEdit} className="p-2 hover:bg-white/10 rounded-lg text-blue-300"><Edit2 size={16} /></button><button onClick={onUndo} className="flex items-center gap-1 px-3 py-2 hover:bg-white/10 rounded-lg text-amber-300 font-bold text-xs"><RotateCcw size={14} /> <span>Undo</span></button></div>)}
     </motion.div>
   );
 };
 
+// --- MAIN EXPORT ---
 export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean) => void }) => {
   const [input, setInput] = useState('');
   const [activeSector, setActiveSector] = useState<SectorType>(null);
@@ -92,6 +90,13 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
 
   const handleFocus = () => { setIsTyping(true); onFocusChange?.(true); };
   const handleCollapse = () => { inputRef.current?.blur(); setIsTyping(false); onFocusChange?.(false); };
+
+  // VUỐT XUỐNG ĐỂ ẨN
+  const handleDragEnd = (_: any, info: any) => {
+    if (info.offset.y > 50) { // Kéo xuống quá 50px
+      handleCollapse();
+    }
+  };
 
   useEffect(() => { const result = smartParser(input); setNlpData(result); }, [input]);
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => { setInput(e.target.value); if(toast) setToast(null); };
@@ -117,7 +122,7 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
           content: input, type: 'task', status: 'active', isFocus: false, createdAt: now, updatedAt: now,
           priority: priorityMap[targetSector] as any || 'normal', 
           quantity: finalNlp.quantity || 1, unit: finalNlp.unit || 'lần', 
-          frequency: finalNlp.frequency || 'once', frequency_detail: finalNlp.frequency_detail || '', 
+          frequency: (finalNlp.frequency as any) || 'once', frequency_detail: finalNlp.frequency_detail || '', 
           is_nlp_hidden: false, mood_score: 0, progress: 0, isBookmarked: false 
         });
         await addXp('todo_new');
@@ -133,7 +138,6 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
         await addXp('thought');
       }
       triggerHaptic('success');
-      // Pass raw data for editing
       setLastSaved({ 
         id: id as number, content: input, type, mood_score: moodScore,
         quantity: finalNlp.quantity, unit: finalNlp.unit, frequency: finalNlp.frequency, frequency_detail: finalNlp.frequency_detail
@@ -148,7 +152,6 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
   const handleEditSave = async (updatedData: any) => {
     if(!lastSaved?.id) return;
     try {
-      // FIX: Update trực tiếp vào DB với data phẳng từ Modal
       if(lastSaved.type === 'task') {
         await db.entries.update(lastSaved.id, { 
           content: updatedData.content, 
@@ -173,7 +176,6 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
 
   const handleUndo = async () => { if(!lastSaved?.id) return; try { await db.entries.delete(lastSaved.id); setInput(lastSaved.content); setToast({ msg: 'Đã hoàn tác!', type: 'success' }); setLastSaved(null); inputRef.current?.focus(); } catch (e) { console.error(e); } };
   
-  // Drag logic (giữ nguyên)
   const handleDrag = (info: any, type: 'TASK' | 'MOOD') => {
     const { x, y } = info.offset; const d = Math.sqrt(x*x+y*y); const a = Math.atan2(y, x) * (180/Math.PI);
     if(type==='TASK') { if(d<40) {setActiveSector(null);return;} if(a>-165&&a<-105) setActiveSector('TASK_NORMAL'); else if(a>-75&&a<-15) setActiveSector('TASK_URGENT'); else if(a>105&&a<165) setActiveSector('TASK_IMPORTANT'); else if(a>15&&a<75) setActiveSector('TASK_CRITICAL'); }
@@ -185,7 +187,15 @@ export const MindInput = ({ onFocusChange }: { onFocusChange?: (focused: boolean
       <AnimatePresence>{toast && <ActionToast message={toast.msg} type={toast.type} onUndo={handleUndo} onEdit={()=>setShowEditModal(true)} onClose={()=>setToast(null)} />}</AnimatePresence>
       {showEditModal && lastSaved && <EditModal entry={lastSaved} onClose={()=>setShowEditModal(false)} onSave={handleEditSave} />}
       
-      <motion.div animate={{ opacity: activeRail ? 0.2 : 1, scale: activeRail ? 0.95 : 1, filter: activeRail ? "blur(3px)" : "blur(0px)", boxShadow: isTyping ? "0 0 0 4px rgba(59, 130, 246, 0.2)" : "0 1px 2px 0 rgba(0, 0, 0, 0.05)", borderColor: isTyping ? "#3B82F6" : "#E2E8F0" }} className="z-10 w-72 h-44 bg-white rounded-xl border p-6 flex flex-col items-center justify-center relative transition-colors duration-300">
+      {/* THÊM drag="y" vào đây để vuốt xuống ẩn */}
+      <motion.div 
+        drag="y" 
+        dragConstraints={{ top: 0, bottom: 0 }} 
+        dragElastic={{ bottom: 0.2, top: 0 }} 
+        onDragEnd={handleDragEnd}
+        animate={{ opacity: activeRail ? 0.2 : 1, scale: activeRail ? 0.95 : 1, filter: activeRail ? "blur(3px)" : "blur(0px)", boxShadow: isTyping ? "0 0 0 4px rgba(59, 130, 246, 0.2)" : "0 1px 2px 0 rgba(0, 0, 0, 0.05)", borderColor: isTyping ? "#3B82F6" : "#E2E8F0" }} 
+        className="z-10 w-72 h-44 bg-white rounded-xl border p-6 flex flex-col items-center justify-center relative transition-colors duration-300 touch-pan-y"
+      >
         <textarea ref={inputRef} value={input} onFocus={handleFocus} onChange={handleInputChange} placeholder="Nhập nội dung..." className="w-full h-full bg-transparent text-slate-700 resize-none outline-none text-center text-lg font-normal z-10 placeholder-slate-400" />
         <AnimatePresence>{isTyping && (<motion.button initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} onClick={handleCollapse} className="absolute -top-3 -right-3 w-8 h-8 bg-slate-800 text-white rounded-full flex items-center justify-center shadow-lg z-50 hover:bg-slate-700 active:scale-90" title="Thoát nhập liệu"><Minimize2 size={16} /></motion.button>)}</AnimatePresence>
         <AnimatePresence>{nlpData?.detected && !activeRail && (<motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="absolute bottom-2 bg-blue-50 border border-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-semibold flex gap-2 items-center shadow-sm z-20"><span>⚡ {nlpData.quantity} {nlpData.unit}</span></motion.div>)}</AnimatePresence>
