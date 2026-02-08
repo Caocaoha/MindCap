@@ -1,54 +1,56 @@
 import Dexie, { type Table } from 'dexie';
 
-// 1. DATA MODELS
+// 1. DATA MODELS INTERFACES
+// Định nghĩa chặt chẽ để TypeScript hỗ trợ autocomplete
 
 export interface Entry {
   id?: number;
   content: string;
   
-  // Classification (Phân loại)
+  // --- CLASSIFICATION ---
   type: 'task' | 'mood' | 'identity'; 
   status: 'active' | 'completed' | 'archived';
   isFocus: boolean; 
   
-  // Quantitative (Định lượng cho Task)
+  // --- QUANTITATIVE (Task) ---
   quantity: number;      
   progress: number;      
   unit: string;          
   
-  // Strategy & Scheduling (Chiến lược)
-  // Thêm 'undefined' để tương thích dữ liệu cũ chưa migrate
+  // --- STRATEGY & SCHEDULING ---
+  // Priority: Dùng cho Sa bàn Eisenhower
   priority: 'normal' | 'important' | 'urgent' | 'critical';
+  // Frequency: Dùng cho việc lặp lại
   frequency: 'once' | 'daily' | 'weekly' | 'monthly';
-  frequency_detail?: string; // VD: "T2,T4" hoặc ngày tháng
+  frequency_detail?: string; 
   
-  // Mood & Identity Specifics
+  // --- MOOD & IDENTITY ---
   mood_score: number;
   questionId?: number;
   
-  // --- V4.0+: MEMORY & ENTROPY ---
-  isBookmarked: boolean;  // Hạt giống ký ức (Visual Bookmark)
+  // --- MEMORY & ENTROPY (V4+) ---
+  isBookmarked: boolean;  // True = Hạt giống ký ức (Không bị mờ)
   bookmarkReason?: string;
-  updatedAt: Date;        // Biến số cốt lõi tính Entropy (Độ tan rã)
+  updatedAt: Date;        // Thời gian tương tác cuối -> Tính Entropy
   
-  // Timestamps
+  // --- TIMESTAMPS ---
   createdAt: Date;
   completedAt?: Date;
   
-  // System Flags
-  is_nlp_hidden: boolean;
+  // --- SYSTEM FLAGS ---
+  is_nlp_hidden: boolean; // Ẩn khỏi dòng thời gian nếu là input phụ
   metadata?: { [key: string]: any; };
 }
 
 export interface MevLog {
   id?: number;
-  // Bổ sung 'level_up' để tracking sự kiện thăng cấp
+  // Các hành động sinh ra điểm CME
   actionType: 'todo_new' | 'todo_done' | 'habit_log' | 'thought' | 'identity_fill' | 'level_up';
   points: number;
   timestamp: Date;
 }
 
-// 2. DATABASE CLASS
+// 2. DATABASE CLASS CONFIGURATION
 class MindDatabase extends Dexie {
   entries!: Table<Entry>;
   mev_logs!: Table<MevLog>;
@@ -56,36 +58,42 @@ class MindDatabase extends Dexie {
   constructor() {
     super('MindCap_Store');
     
-    // VERSION HISTORY
-    // V1-V3: Dev phases
-    // V4: Added Entropy fields
-    // V5: Added Priority Index & Refined Migration
+    // --- VERSION HISTORY & MIGRATION ---
+    // V1-V3: Development
+    // V4: Added Entropy Fields
+    // V5: Added Priority Index
+    // V6: PWA Stability & Data Normalization
     
-    this.version(5).stores({
-      // Index Optimization:
-      // - priority: Hỗ trợ sort/filter cho Sa bàn
-      // - updatedAt: Hỗ trợ query Entropy/Resurfacing
-      // - isBookmarked: Hỗ trợ query Resurfacing
+    this.version(6).stores({
+      // Indexing Strategy:
+      // - status, type, isFocus: Core Filters
+      // - priority: Sorting cho Sa bàn
+      // - updatedAt: Query cho Entropy & Resurfacing
+      // - isBookmarked: Query cho Resurfacing
       entries: '++id, type, status, isFocus, isBookmarked, priority, createdAt, updatedAt', 
       mev_logs: '++id, actionType, timestamp'
     }).upgrade(async tx => {
-      // MIGRATION SCRIPT (CRITICAL)
-      // Tự động chữa lành dữ liệu cũ khi User update app
+      // MIGRATION SCRIPT: "Chữa lành" dữ liệu cũ
+      // Chạy 1 lần duy nhất khi User update lên phiên bản mới
       await tx.table('entries').toCollection().modify(entry => {
         const now = new Date();
+        
         // 1. Fix Entropy: Nếu thiếu updatedAt -> lấy createdAt hoặc Now
         if (!entry.updatedAt) entry.updatedAt = entry.createdAt || now;
-        // 2. Fix Bookmark: Mặc định là false
+        
+        // 2. Fix Bookmark: Mặc định là false để tránh lỗi filter
         if (entry.isBookmarked === undefined) entry.isBookmarked = false;
-        // 3. Fix Priority: Mặc định là normal
+        
+        // 3. Fix Priority: Mặc định là normal để Sa bàn phân loại đúng
         if (!entry.priority) entry.priority = 'normal';
+        
         // 4. Fix Frequency: Mặc định là once
         if (!entry.frequency) entry.frequency = 'once';
       });
     });
   }
 
-  // Panic Button (Dùng trong Settings)
+  // Panic Button: Xóa sạch dữ liệu (Dùng trong Settings)
   async nuke() {
     await this.transaction('rw', this.entries, this.mev_logs, async () => {
       await this.entries.clear();

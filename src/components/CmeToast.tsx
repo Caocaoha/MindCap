@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react'; // Xóa 'React'
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap } from 'lucide-react';
 
@@ -16,6 +16,7 @@ export const CmeToast = () => {
       if (actionType === 'habit_log') text = "Thói quen";
       if (actionType === 'identity_fill') text = "Căn tính";
       if (actionType === 'thought') text = "Suy tư";
+      if (actionType === 'level_up') text = "Thăng cấp";
 
       setNotifications(prev => [...prev, { id, points, text }]);
 
@@ -29,8 +30,9 @@ export const CmeToast = () => {
   }, []);
 
   return (
-    // FIX: Vị trí chính giữa bên dưới
-    <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
+    // FIX: left-1/2 -translate-x-1/2 để căn giữa
+    // FIX: bottom-24 để nằm thấp nhất
+    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none w-full max-w-[300px]">
       <AnimatePresence>
         {notifications.map(n => (
           <motion.div
