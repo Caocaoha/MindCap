@@ -5,23 +5,22 @@ import {
   Smile, Meh, Frown, Heart, 
   Send, Layers, XCircle, RotateCcw, Edit2, Minimize2 
 } from 'lucide-react';
-import { db, type Entry } from '../db'; // Import Entry type
+import { db, type Entry } from '../db';
 import { addXp } from '../utils/gamification';
 import { smartParser, type NlpResult } from '../utils/nlpParser';
-import { echoEngine } from '../utils/echoEngine'; // Import Echo Engine
+import { echoEngine } from '../utils/echoEngine';
 import { EditModal } from './EditModal';
 import clsx from 'clsx';
 
 type SectorType = 'TASK_NORMAL' | 'TASK_IMPORTANT' | 'TASK_URGENT' | 'TASK_CRITICAL' | 
                   'MOOD_HAPPY' | 'MOOD_NEUTRAL' | 'MOOD_SAD' | null;
 
-// --- ACTION TOAST (FIXED CENTER) ---
+// --- ACTION TOAST (CENTERED) ---
 const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any) => {
   useEffect(() => { const t = setTimeout(onClose, 5000); return () => clearTimeout(t); }, [onClose]);
   
   return (
-    // FIX: Container full-width (inset-x-0) + flex justify-center để căn giữa tuyệt đối
-    <div className="fixed bottom-40 inset-x-0 flex justify-center z-[120] pointer-events-none px-4">
+    <div className="fixed bottom-32 inset-x-0 flex justify-center z-[120] pointer-events-none px-4">
       <motion.div 
         initial={{ opacity: 0, y: 20, scale: 0.9 }} 
         animate={{ opacity: 1, y: 0, scale: 1 }} 
@@ -52,14 +51,17 @@ const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any
 // --- MAIN COMPONENT ---
 interface MindInputProps {
   onFocusChange?: (focused: boolean) => void;
-  derivedEntry?: Entry | null;      // Entry gốc để phái sinh (nếu có)
-  onClearDerived?: () => void;      // Hàm xóa state gốc sau khi lưu
+  derivedEntry?: Entry | null;
+  onClearDerived?: () => void;
 }
 
 export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindInputProps) => {
   const [input, setInput] = useState('');
   const [activeSector, setActiveSector] = useState<SectorType>(null);
-  const [activeRail, setActiveRail] = useState<'TASK' | 'MOOD' | null>(null);
+  
+  // LOGIC HIỂN THỊ MỚI: Chỉ active rail nào đang được kéo
+  const [activeDragType, setActiveDragType] = useState<'TASK' | 'MOOD' | null>(null);
+  
   const [nlpData, setNlpData] = useState<NlpResult | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [lastSaved, setLastSaved] = useState<any>(null);
@@ -72,7 +74,16 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
   const taskX = useMotionValue(0); const taskY = useMotionValue(0);
   const moodX = useMotionValue(0); const moodY = useMotionValue(0);
 
-  // --- SHORTCUTS ---
+  // Auto-fill Derived Entry
+  useEffect(() => {
+    if (derivedEntry) {
+      // Để trống input để user tự nhập hành động, chỉ hiển thị Badge "Từ: ..."
+      setIsTyping(true);
+      inputRef.current?.focus();
+    }
+  }, [derivedEntry]);
+
+  // Shortcuts logic (Giữ nguyên)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (!isTyping && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -88,10 +99,13 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
 
   const handleFocus = () => { setIsTyping(true); setIsKeyboardActive(true); onFocusChange?.(true); };
   const handleCollapse = () => { inputRef.current?.blur(); setIsTyping(false); setIsKeyboardActive(false); onFocusChange?.(false); };
-  const handleDragEnd = (_: any, info: any) => { if (info.offset.y > 50) handleCollapse(); };
-
+  
   useEffect(() => { const result = smartParser(input); setNlpData(result); }, [input]);
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => { setInput(e.target.value); if(toast) setToast(null); };
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => { 
+    setInput(e.target.value); 
+    if(toast) setToast(null); 
+    if(e.target.value.length > 0) setIsTyping(true);
+  };
 
   const triggerHaptic = (pattern: 'light' | 'medium' | 'success') => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -112,7 +126,7 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
 
       if (targetSector.startsWith('TASK')) {
         type = 'task';
-        actionTypeForLog = 'task_create'; // [cite: 71]
+        actionTypeForLog = 'task_create';
         const priorityMap: Record<string, string> = { 'TASK_NORMAL': 'normal', 'TASK_IMPORTANT': 'important', 'TASK_URGENT': 'urgent', 'TASK_CRITICAL': 'critical' };
         
         id = await db.entries.add({ 
@@ -124,7 +138,7 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
         });
       } else {
         type = 'mood';
-        actionTypeForLog = 'thought_add'; // [cite: 78]
+        actionTypeForLog = 'thought_add';
         if (targetSector.includes('HAPPY')) moodScore = 1 + moodLevel;
         if (targetSector.includes('SAD')) moodScore = -(1 + moodLevel);
         if (targetSector.includes('NEUTRAL')) moodScore = 0;
@@ -134,40 +148,24 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
           mood_score: moodScore, quantity: 1, unit: 'lần', frequency: 'once', is_nlp_hidden: true, priority: 'normal', progress: 0, isBookmarked: false 
         });
         
-        if (type === 'mood' && moodScore !== 0) {
-           await addXp('mood_log'); // Log thêm điểm mood [cite: 81]
-        }
+        if (type === 'mood' && moodScore !== 0) await addXp('mood_log');
       }
       
-      // --- INTEGRATION: ECHO ENGINE & DERIVATION ---
-      
-      // 1. Explicit Link (Phái sinh) 
       if (derivedEntry?.id) {
-        await db.echo_links.add({
-          sourceId: derivedEntry.id, 
-          targetId: id as number,    
-          type: 'structural',       
-          strength: 3,               // x3 CPI
-          createdAt: new Date()
-        });
-        console.log("🔗 Created Explicit Link (x3 CPI)");
-        onClearDerived?.(); // Reset state phái sinh
+        await db.echo_links.add({ sourceId: derivedEntry.id, targetId: id as number, type: 'structural', strength: 3, createdAt: new Date() });
+        onClearDerived?.();
       }
 
-      // 2. Implicit/Semantic Link (Chạy ngầm)
       const newEntryFull = await db.entries.get(id as number);
-      if (newEntryFull) {
-         echoEngine.processEntry(newEntryFull).catch(err => console.error("Echo Error:", err));
-      }
-      // ---------------------------------------------
+      if (newEntryFull) echoEngine.processEntry(newEntryFull).catch(err => console.error(err));
 
       triggerHaptic('success');
-      await addXp(actionTypeForLog); // Log điểm Gamification
+      await addXp(actionTypeForLog);
       
       setLastSaved({ id, content: input, type, mood_score: moodScore, ...finalNlp });
       setToast({ msg: type === 'task' ? 'Đã lưu Task' : 'Đã lưu Mood', type: 'success' });
       
-      setInput(''); setActiveSector(null); setActiveRail(null); setMoodLevel(0);
+      setInput(''); setActiveSector(null); setActiveDragType(null); setMoodLevel(0);
       taskX.set(0); taskY.set(0); moodX.set(0); moodY.set(0);
       
       if (!isKeyboardActive) handleCollapse(); 
@@ -185,75 +183,108 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
   };
 
   return (
-    <div className="relative w-full flex flex-col items-center justify-center min-h-[500px] overflow-hidden">
+    <div className="relative w-full flex flex-col items-center justify-center min-h-[300px]">
       <AnimatePresence>{toast && <ActionToast message={toast.msg} type={toast.type} onUndo={handleUndo} onEdit={()=>setShowEditModal(true)} onClose={()=>setToast(null)} />}</AnimatePresence>
       {showEditModal && lastSaved && <EditModal entry={lastSaved} onClose={()=>setShowEditModal(false)} onSave={handleEditSave} />}
       
-      {/* HIỂN THỊ TRẠNG THÁI PHÁI SINH (Nếu có) */}
+      {/* BADGE PHÁI SINH */}
       <AnimatePresence>
         {derivedEntry && (
-          <motion.div 
-            initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}
-            className="absolute top-24 z-20 bg-blue-50 text-blue-600 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm border border-blue-100 max-w-[80%]"
-          >
+          <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="absolute -top-10 z-20 bg-blue-50 text-blue-600 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-sm border border-blue-100 max-w-[80%]">
             <span className="truncate max-w-[150px]">Từ: "{derivedEntry.content}"</span>
             <button onClick={onClearDerived} className="p-1 hover:bg-blue-100 rounded-full"><XCircle size={14}/></button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* INPUT CARD */}
+      {/* INPUT CARD - LUÔN HIỆN */}
       <motion.div 
-        drag="y" dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ bottom: 0.2, top: 0 }} onDragEnd={handleDragEnd}
-        animate={{ opacity: activeRail ? 0.2 : 1, scale: activeRail ? 0.95 : 1, filter: activeRail ? "blur(3px)" : "blur(0px)", boxShadow: isKeyboardActive ? "0 0 0 4px rgba(59, 130, 246, 0.4)" : (isTyping ? "0 0 0 4px rgba(59, 130, 246, 0.2)" : "0 1px 2px 0 rgba(0, 0, 0, 0.05)"), borderColor: (isTyping || isKeyboardActive) ? "#3B82F6" : "#E2E8F0" }} 
-        className="z-10 w-72 h-44 bg-white rounded-xl border p-6 flex flex-col items-center justify-center relative transition-all duration-300 touch-pan-y"
+        animate={{ 
+          scale: activeDragType ? 0.95 : 1, 
+          filter: activeDragType ? "blur(2px)" : "blur(0px)",
+          borderColor: (isTyping || isKeyboardActive) ? "#3B82F6" : "#E2E8F0" 
+        }} 
+        className="z-10 w-72 h-44 bg-white rounded-xl border p-6 flex flex-col items-center justify-center relative transition-all duration-300 shadow-sm"
       >
         <textarea ref={inputRef} value={input} onFocus={handleFocus} onChange={handleInputChange} placeholder="Nhập nội dung..." className="w-full h-full bg-transparent text-slate-700 resize-none outline-none text-center text-lg font-normal z-10 placeholder-slate-400" />
         <AnimatePresence>{isTyping && (<motion.button initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} onClick={handleCollapse} className="absolute -top-3 -right-3 w-8 h-8 bg-slate-800 text-white rounded-full flex items-center justify-center shadow-lg z-50 hover:bg-slate-700 active:scale-90" title="Thoát nhập liệu"><Minimize2 size={16} /></motion.button>)}</AnimatePresence>
-        <AnimatePresence>{nlpData?.detected && !activeRail && (<motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="absolute bottom-2 bg-blue-50 border border-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-semibold flex gap-2 items-center shadow-sm z-20"><span>⚡ {nlpData.quantity} {nlpData.unit}</span></motion.div>)}</AnimatePresence>
+        <AnimatePresence>{nlpData?.detected && !activeDragType && (<motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="absolute bottom-2 bg-blue-50 border border-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-semibold flex gap-2 items-center shadow-sm z-20"><span>⚡ {nlpData.quantity} {nlpData.unit}</span></motion.div>)}</AnimatePresence>
       </motion.div>
 
-      {/* RAILS CONTAINER */}
-      <div className="w-full max-w-[500px] flex items-center mt-20 px-10 relative z-30">
-        
-        {/* TASK RAIL (FIXED SQUARE LAYOUT) */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center justify-center">
-          <AnimatePresence>
-            {activeRail === 'TASK' && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none w-[280px] h-[280px]">
-                {/* SVG Guidelines */}
-                <svg className="absolute inset-0 w-full h-full opacity-30"><line x1="20%" y1="20%" x2="80%" y2="80%" stroke="#64748b" strokeWidth="2" strokeDasharray="4 4" /><line x1="80%" y1="20%" x2="20%" y2="80%" stroke="#64748b" strokeWidth="2" strokeDasharray="4 4" /></svg>
-                {/* Fixed Corner Buttons */}
-                <div className="absolute top-0 left-0"><TargetIcon sector="TASK_NORMAL" icon={CheckCircle2} label="Thường" active={activeSector} color="text-blue-600" /></div>
-                <div className="absolute top-0 right-0"><TargetIcon sector="TASK_URGENT" icon={AlertTriangle} label="Gấp" active={activeSector} color="text-orange-500" /></div>
-                <div className="absolute bottom-0 left-0"><TargetIcon sector="TASK_IMPORTANT" icon={Star} label="Cần" active={activeSector} color="text-amber-500" /></div>
-                <div className="absolute bottom-0 right-0"><TargetIcon sector="TASK_CRITICAL" icon={Flame} label="Cháy" active={activeSector} color="text-red-500" /></div>
-              </div>
-            )}
-          </AnimatePresence>
-          <motion.div drag={input.trim().length > 0} dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} dragElastic={1} onDragStart={() => setActiveRail('TASK')} onDrag={(_, info) => handleDrag(info, 'TASK')} onDragEnd={() => activeSector ? executeSave(activeSector) : (setActiveRail(null), setActiveSector(null))} style={{ x: taskX, y: taskY, zIndex: activeRail === 'TASK' ? 50 : 20 }} className={clsx("p-4 rounded-full border-2 transition-all cursor-grab active:cursor-grabbing shadow-sm", input.length === 0 ? "opacity-20" : "bg-white border-slate-200")}><Layers size={24} className={activeRail === 'TASK' ? "text-slate-900" : "text-slate-400"} /><AnimatePresence>{activeRail === 'TASK' && nlpData?.detected && (<motion.div initial={{ opacity: 0, scale: 0.5, y: 0 }} animate={{ opacity: 1, scale: 1, y: -50 }} exit={{ opacity: 0, scale: 0.5 }} className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] whitespace-nowrap px-2 py-1 rounded-md font-bold shadow-lg pointer-events-none z-[60]">{nlpData.quantity} {nlpData.unit} | {nlpData.frequency === 'daily' ? 'Hàng ngày' : nlpData.frequency}</motion.div>)}</AnimatePresence></motion.div><span className="text-[10px] font-bold mt-2 text-slate-400 uppercase">Task</span>
-        </div>
+      {/* RAILS CONTAINER - CHỈ HIỆN KHI KÉO VÀ KHÔNG CHIẾM CHỖ */}
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+        {/* TASK RAIL */}
+        <AnimatePresence>
+          {activeDragType === 'TASK' && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-[280px] h-[280px] relative">
+               <svg className="absolute inset-0 w-full h-full opacity-30"><line x1="20%" y1="20%" x2="80%" y2="80%" stroke="#64748b" strokeWidth="2" strokeDasharray="4 4" /><line x1="80%" y1="20%" x2="20%" y2="80%" stroke="#64748b" strokeWidth="2" strokeDasharray="4 4" /></svg>
+               <div className="absolute top-0 left-0"><TargetIcon sector="TASK_NORMAL" icon={CheckCircle2} label="Thường" active={activeSector} color="text-blue-600" /></div>
+               <div className="absolute top-0 right-0"><TargetIcon sector="TASK_URGENT" icon={AlertTriangle} label="Gấp" active={activeSector} color="text-orange-500" /></div>
+               <div className="absolute bottom-0 left-0"><TargetIcon sector="TASK_IMPORTANT" icon={Star} label="Cần" active={activeSector} color="text-amber-500" /></div>
+               <div className="absolute bottom-0 right-0"><TargetIcon sector="TASK_CRITICAL" icon={Flame} label="Cháy" active={activeSector} color="text-red-500" /></div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* MOOD RAIL (KEEP DYNAMIC) */}
-        <div className="absolute right-6 flex flex-col items-center">
-          <AnimatePresence>
-            {activeRail === 'MOOD' && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-                <div className="absolute w-[180px] h-[180px] opacity-30 -translate-x-1/2 -translate-y-1/2"><div className="absolute top-0 bottom-0 left-1/2 w-[2px] bg-slate-400 border-l border-dashed -translate-x-1/2" /><div className="absolute top-1/2 left-0 w-1/2 h-[2px] bg-slate-400 border-t border-dashed -translate-y-1/2" /></div>
-                <DynamicTargetIcon sector="MOOD_HAPPY" icon={moodLevel > 0 ? Heart : Smile} label={moodLevel > 0 ? "Tuyệt" : "Vui"} x={0} y={-90} active={activeSector} color="text-green-500" scale={moodLevel > 0 ? 1.5 : 1.3} />
-                <DynamicTargetIcon sector="MOOD_SAD" icon={moodLevel > 0 ? AlertTriangle : Frown} label={moodLevel > 0 ? "Tệ" : "Buồn"} x={0} y={90} active={activeSector} color="text-slate-500" scale={moodLevel > 0 ? 1.5 : 1.3} />
-                <DynamicTargetIcon sector="MOOD_NEUTRAL" icon={Meh} label="Lưu" x={-90} y={0} active={activeSector} color="text-purple-500" />
-              </div>
-            )}
-          </AnimatePresence>
-          <motion.div drag={input.trim().length > 0} dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} dragElastic={1} onDragStart={() => setActiveRail('MOOD')} onDrag={(_, info) => handleDrag(info, 'MOOD')} onDragEnd={() => activeSector ? executeSave(activeSector) : (setActiveRail(null), setActiveSector(null), setMoodLevel(0))} style={{ x: moodX, y: moodY, zIndex: activeRail === 'MOOD' ? 50 : 20 }} className={clsx("p-4 rounded-full border-2 transition-all cursor-grab active:cursor-grabbing shadow-lg z-50", input.length === 0 ? "opacity-20" : "bg-[#2563EB] border-[#2563EB]")}><Send size={24} className="text-white" /></motion.div><span className="text-[10px] font-bold mt-2 text-slate-400 uppercase tracking-tighter">Mood</span>
-        </div>
+        {/* MOOD RAIL */}
+        <AnimatePresence>
+          {activeDragType === 'MOOD' && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-[300px] h-[300px] relative">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[180px] h-[180px] opacity-30"><div className="absolute top-0 bottom-0 left-1/2 w-[2px] bg-slate-400 border-l border-dashed -translate-x-1/2" /><div className="absolute top-1/2 left-0 w-1/2 h-[2px] bg-slate-400 border-t border-dashed -translate-y-1/2" /></div>
+                <DynamicTargetIcon sector="MOOD_HAPPY" icon={moodLevel > 0 ? Heart : Smile} label={moodLevel > 0 ? "Tuyệt" : "Vui"} x="50%" y="20%" active={activeSector} color="text-green-500" scale={moodLevel > 0 ? 1.5 : 1.3} />
+                <DynamicTargetIcon sector="MOOD_SAD" icon={moodLevel > 0 ? AlertTriangle : Frown} label={moodLevel > 0 ? "Tệ" : "Buồn"} x="50%" y="80%" active={activeSector} color="text-slate-500" scale={moodLevel > 0 ? 1.5 : 1.3} />
+                <DynamicTargetIcon sector="MOOD_NEUTRAL" icon={Meh} label="Lưu" x="20%" y="50%" active={activeSector} color="text-purple-500" />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* DRAG BUTTONS - CHỈ HIỆN KHI CÓ INPUT */}
+      <AnimatePresence>
+        {input.length > 0 && (
+           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="flex items-center gap-10 mt-6 z-40">
+              {/* Task Button */}
+              <div className="flex flex-col items-center gap-2">
+                 <motion.div 
+                    drag 
+                    dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} 
+                    dragElastic={1} 
+                    onDragStart={() => setActiveDragType('TASK')} 
+                    onDrag={(_, info) => handleDrag(info, 'TASK')} 
+                    onDragEnd={() => { if(activeSector) executeSave(activeSector); setActiveDragType(null); setActiveSector(null); }} 
+                    style={{ x: taskX, y: taskY }} 
+                    className="p-4 rounded-full border-2 bg-white border-slate-200 cursor-grab active:cursor-grabbing shadow-sm"
+                 >
+                    <Layers size={24} className="text-slate-900" />
+                 </motion.div>
+                 <span className="text-[10px] font-bold text-slate-400 uppercase">Task</span>
+              </div>
+
+              {/* Mood Button */}
+              <div className="flex flex-col items-center gap-2">
+                 <motion.div 
+                    drag 
+                    dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} 
+                    dragElastic={1} 
+                    onDragStart={() => setActiveDragType('MOOD')} 
+                    onDrag={(_, info) => handleDrag(info, 'MOOD')} 
+                    onDragEnd={() => { if(activeSector) executeSave(activeSector); setActiveDragType(null); setActiveSector(null); setMoodLevel(0); }} 
+                    style={{ x: moodX, y: moodY }} 
+                    className="p-4 rounded-full border-2 bg-blue-600 border-blue-600 cursor-grab active:cursor-grabbing shadow-lg"
+                 >
+                    <Send size={24} className="text-white" />
+                 </motion.div>
+                 <span className="text-[10px] font-bold text-slate-400 uppercase">Mood</span>
+              </div>
+           </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };
 
-// --- FIXED TARGET ICON COMPONENT (LABEL OVERLAY) ---
+// ... Các sub-component TargetIcon giữ nguyên nhưng lưu ý sửa lại css position cho DynamicTargetIcon
 const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => { 
   const isTarget = active === sector; 
   return (
@@ -268,7 +299,7 @@ const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => {
   ); 
 };
 
-// Dynamic Icon (cho Mood)
+// Sửa lại DynamicTargetIcon dùng top/left % cho linh hoạt trong container
 const DynamicTargetIcon = ({ sector, icon: Icon, label, x, y, active, color, scale }: any) => { 
   const isTarget = active === sector; 
   return (

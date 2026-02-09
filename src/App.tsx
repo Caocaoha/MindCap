@@ -3,12 +3,12 @@ import { MindInput } from './components/MindInput';
 import { NewSaBan } from './components/NewSaBan';
 import { FocusZone } from './components/FocusZone';
 import { JourneyTab } from './components/JourneyTab'; 
-import { IdentityTab } from './components/IdentityTab'; // Import Identity
+import { IdentityTab } from './components/IdentityTab';
 import { CmeToast } from './components/CmeToast'; 
 import { SettingsModal } from './components/SettingsModal';
 import { ReloadPrompt } from './components/ReloadPrompt';
 import { OfflineWarning } from './components/OfflineWarning';
-import { type Entry } from './db'; // Import Entry type cho tính năng phái sinh
+import { type Entry } from './db';
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
@@ -20,20 +20,15 @@ function App() {
   const [activeTab, setActiveTab] = useState<'todo' | 'mind' | 'journey'>('mind');
   const [isInputFocused, setIsInputFocused] = useState(false);
   
-  // State quản lý các Modal
   const [showIdentity, setShowIdentity] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
-
-  // STATE MỚI: Quản lý Entry gốc để phái sinh (Explicit Link)
   const [derivedEntry, setDerivedEntry] = useState<Entry | null>(null);
 
-  // LOGIC CONFETTI (Pháo hoa khi lên cấp)
   useEffect(() => {
     const handleLevelUp = (e: any) => {
       const newLevel = e.detail.level;
       setShowLevelUp(newLevel);
-      
       const duration = 3000;
       const end = Date.now() + duration;
       (function frame() {
@@ -46,33 +41,21 @@ function App() {
     return () => window.removeEventListener('level-up', handleLevelUp);
   }, []);
 
-  // XỬ LÝ PHÁI SINH (Từ Journey -> Mind Input)
   const handleDerive = (entry: Entry) => {
-    setDerivedEntry(entry); // Lưu entry gốc
-    setActiveTab('mind');   // Chuyển sang tab nhập liệu
-    // Rung nhẹ báo hiệu chuyển cảnh
+    setDerivedEntry(entry);
+    setActiveTab('mind');
     if (navigator.vibrate) navigator.vibrate(50);
   };
 
   return (
     <div className="w-full h-[100dvh] bg-white flex flex-col font-sans text-slate-900 mx-auto max-w-md shadow-2xl overflow-hidden relative">
-      
-      {/* --- PWA SAFEGUARDS --- */}
       <ReloadPrompt />
       <OfflineWarning />
-      
-      {/* --- TOASTS LAYER --- */}
       <CmeToast />
 
-      {/* --- OVERLAYS --- */}
       <AnimatePresence mode="wait">
-        {/* Modal Căn tính (Identity) */}
         {showIdentity && <IdentityTab onClose={() => setShowIdentity(false)} />}
-        
-        {/* Modal Cài đặt */}
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-        
-        {/* Popup Level Up */}
         {showLevelUp !== null && (
           <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowLevelUp(null)}>
             <div className="bg-white p-8 rounded-3xl text-center shadow-2xl relative overflow-hidden">
@@ -87,33 +70,24 @@ function App() {
         )}
       </AnimatePresence>
 
-      {/* --- HEADER --- */}
-      {/* Fix Safe Area cho tai thỏ */}
       <header className="flex items-center justify-between px-6 pb-2 border-b border-slate-50 bg-white/80 backdrop-blur-md z-40 relative pt-[calc(env(safe-area-inset-top)+1rem)]">
         <button onClick={() => setShowSettings(true)} className="p-2 text-slate-300 hover:text-slate-600 transition-colors"><Settings size={20} /></button>
-        
-        {/* NÚT VÂN TAY: MỞ IDENTITY TAB */}
         <button onClick={() => setShowIdentity(true)} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-white transition-all shadow-sm active:scale-95 group absolute left-1/2 -translate-x-1/2 bottom-1">
           <Fingerprint size={24} strokeWidth={1.5} className="group-hover:animate-pulse"/>
         </button>
-        
         <div className="w-9 h-9"></div>
       </header>
 
-      {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/30 relative scrollbar-hide flex flex-col">
+      <main className="flex-1 overflow-hidden bg-slate-50/30 relative flex flex-col">
         {activeTab === 'mind' && (
-          <div className="flex flex-col w-full min-h-full pb-10 transition-all duration-500 ease-in-out">
-            <AnimatePresence>
-              {!isInputFocused && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="relative z-50 pt-2 px-2 overflow-hidden shrink-0">
-                   <FocusZone />
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <motion.div animate={{ height: isInputFocused ? 40 : 20 }} className="w-full" />
-            <div className="flex-1 flex flex-col justify-start relative z-0 px-4">
-               {/* MIND INPUT: Nhận entry phái sinh */}
+          <div className="flex flex-col h-full w-full">
+            {/* FIX: Luôn hiển thị FocusZone, không dùng điều kiện ẩn */}
+            <div className="shrink-0 z-50 pt-2 px-2 pb-2 bg-slate-50/30 transition-all duration-300">
+               <FocusZone />
+            </div>
+            
+            {/* MindInput chiếm phần còn lại và cho phép scroll nếu cần */}
+            <div className="flex-1 flex flex-col justify-center relative z-0 px-4 pb-4 overflow-y-auto">
                <MindInput 
                  onFocusChange={setIsInputFocused} 
                  derivedEntry={derivedEntry}
@@ -123,16 +97,14 @@ function App() {
           </div>
         )}
         
-        {activeTab === 'todo' && <NewSaBan />} 
+        {activeTab === 'todo' && <div className="h-full overflow-y-auto scrollbar-hide"><NewSaBan /></div>} 
         
         {activeTab === 'journey' && (
-          // JOURNEY TAB: Truyền hàm phái sinh
-          <JourneyTab onDerive={handleDerive} />
+          <div className="h-full overflow-y-auto scrollbar-hide"><JourneyTab onDerive={handleDerive} /></div>
         )}
       </main>
 
-      {/* --- BOTTOM NAV --- */}
-      <nav className="h-20 bg-white border-t border-slate-100 flex items-center justify-around px-6 pb-6 pt-2 z-50 pb-safe">
+      <nav className="h-20 bg-white border-t border-slate-100 flex items-center justify-around px-6 pb-6 pt-2 z-50 pb-safe shrink-0">
         <button onClick={() => setActiveTab('todo')} className={`p-3 rounded-2xl transition-all duration-300 ${activeTab === 'todo' ? 'bg-blue-50 text-blue-600 scale-105' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-500'}`}><ListTodo size={26} strokeWidth={activeTab === 'todo' ? 2.5 : 2} /></button>
         <button onClick={() => setActiveTab('mind')} className={`p-4 rounded-full transition-all duration-300 border-4 shadow-lg active:scale-95 ${activeTab === 'mind' ? 'bg-blue-600 text-white border-blue-50 -translate-y-5 shadow-blue-200' : 'bg-white text-slate-300 border-transparent'}`}><Brain size={32} strokeWidth={activeTab === 'mind' ? 2.5 : 2} /></button>
         <button onClick={() => setActiveTab('journey')} className={`p-3 rounded-2xl transition-all duration-300 ${activeTab === 'journey' ? 'bg-blue-50 text-blue-600 scale-105' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-500'}`}><Map size={26} strokeWidth={activeTab === 'journey' ? 2.5 : 2} /></button>

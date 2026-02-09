@@ -165,7 +165,7 @@ export const JourneyTab = ({ onDerive }: { onDerive: (e: Entry) => void }) => {
   const [userArchetype, setUserArchetype] = useState<ArchetypeResult | null>(null);
 
   const logs = useLiveQuery(() => db.mev_logs.toArray());
-  const allEntries = useLiveQuery(() => db.entries.orderBy('createdAt').reverse().toArray());
+  const allEntries = useLiveQuery(() => db.entries.orderBy('updatedAt').reverse().toArray());
 
   useEffect(() => {
     calculateArchetype().then(result => setUserArchetype(result));
