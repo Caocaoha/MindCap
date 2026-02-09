@@ -15,7 +15,7 @@ import clsx from 'clsx';
 type SectorType = 'TASK_NORMAL' | 'TASK_IMPORTANT' | 'TASK_URGENT' | 'TASK_CRITICAL' | 
                   'MOOD_HAPPY' | 'MOOD_NEUTRAL' | 'MOOD_SAD' | null;
 
-// --- ACTION TOAST (CENTERED) ---
+// --- ACTION TOAST ---
 const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any) => {
   useEffect(() => { const t = setTimeout(onClose, 5000); return () => clearTimeout(t); }, [onClose]);
   
@@ -77,13 +77,12 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
   // Auto-fill Derived Entry
   useEffect(() => {
     if (derivedEntry) {
-      // Để trống input để user tự nhập hành động, chỉ hiển thị Badge "Từ: ..."
       setIsTyping(true);
       inputRef.current?.focus();
     }
   }, [derivedEntry]);
 
-  // Shortcuts logic (Giữ nguyên)
+  // Shortcuts
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (!isTyping && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -120,6 +119,12 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
     const now = new Date();
     const finalNlp = nlpData || { quantity: 1, unit: 'lần', frequency: 'once', detected: false };
     
+    // --- FIX LỖI Ở ĐÂY: KHAI BÁO nextReview ---
+    // Logic: Nếu nội dung > 16 từ -> Hẹn xem lại sau 10 phút (Mốc 0)
+    const wordCount = input.trim().split(/\s+/).length;
+    const nextReview = wordCount > 16 ? new Date(Date.now() + 10 * 60000) : undefined;
+    // ------------------------------------------
+
     try {
       let id; let type: 'task' | 'mood'; let moodScore = 0;
       let actionTypeForLog: any = 'thought_add';
@@ -134,9 +139,12 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
           priority: priorityMap[targetSector] as any || 'normal', 
           quantity: finalNlp.quantity || 1, unit: finalNlp.unit || 'lần', 
           frequency: (finalNlp.frequency as any) || 'once', frequency_detail: finalNlp.frequency_detail || '', 
-          is_nlp_hidden: false, mood_score: 0, progress: 0, isBookmarked: false 
-          nextReviewAt: nextReview, // <--- THÊM DÒNG NÀY
-          metadata: { reviewCount: 0 } // Đánh dấu là chưa review lần nào
+          is_nlp_hidden: false, mood_score: 0, progress: 0, isBookmarked: false,
+          
+          // --- THÊM DÒNG NÀY ĐÚNG CÚ PHÁP ---
+          nextReviewAt: nextReview,
+          metadata: { reviewCount: 0 }
+          // ----------------------------------
         });
       } else {
         type = 'mood';
@@ -147,7 +155,12 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
         
         id = await db.entries.add({ 
           content: input, type: 'mood', status: 'active', isFocus: false, createdAt: now, updatedAt: now,
-          mood_score: moodScore, quantity: 1, unit: 'lần', frequency: 'once', is_nlp_hidden: true, priority: 'normal', progress: 0, isBookmarked: false 
+          mood_score: moodScore, quantity: 1, unit: 'lần', frequency: 'once', is_nlp_hidden: true, priority: 'normal', progress: 0, isBookmarked: false,
+          
+          // --- THÊM DÒNG NÀY ĐÚNG CÚ PHÁP ---
+          nextReviewAt: nextReview,
+          metadata: { reviewCount: 0 }
+          // ----------------------------------
         });
         
         if (type === 'mood' && moodScore !== 0) await addXp('mood_log');
@@ -286,7 +299,6 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
   );
 };
 
-// ... Các sub-component TargetIcon giữ nguyên nhưng lưu ý sửa lại css position cho DynamicTargetIcon
 const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => { 
   const isTarget = active === sector; 
   return (
@@ -301,7 +313,6 @@ const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => {
   ); 
 };
 
-// Sửa lại DynamicTargetIcon dùng top/left % cho linh hoạt trong container
 const DynamicTargetIcon = ({ sector, icon: Icon, label, x, y, active, color, scale }: any) => { 
   const isTarget = active === sector; 
   return (
