@@ -135,6 +135,8 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived }: MindI
           quantity: finalNlp.quantity || 1, unit: finalNlp.unit || 'lần', 
           frequency: (finalNlp.frequency as any) || 'once', frequency_detail: finalNlp.frequency_detail || '', 
           is_nlp_hidden: false, mood_score: 0, progress: 0, isBookmarked: false 
+          nextReviewAt: nextReview, // <--- THÊM DÒNG NÀY
+          metadata: { reviewCount: 0 } // Đánh dấu là chưa review lần nào
         });
       } else {
         type = 'mood';
