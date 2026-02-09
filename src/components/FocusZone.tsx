@@ -1,12 +1,12 @@
+import React from 'react'; // <--- FIX LỖI 1
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { motion } from 'framer-motion';
-import { Target, CheckCircle2, History } from 'lucide-react'; // Import History icon
+import { Target, CheckCircle2, History } from 'lucide-react';
 import clsx from 'clsx';
 import { differenceInDays } from 'date-fns';
 
 export const FocusZone = () => {
-  // Lấy 4 task quan trọng nhất đang active
   const focusTasks = useLiveQuery(() => 
     db.entries
       .where('status').equals('active')
@@ -15,30 +15,27 @@ export const FocusZone = () => {
       .toArray()
   );
 
-  // LOGIC HẠT GIỐNG LÃNG QUÊN
   const forgottenSeedsCount = useLiveQuery(async () => {
-    const allBookmarked = await db.entries.where('isBookmarked').equals(true).toArray();
+    // FIX LỖI 2: Dùng .filter() thay vì .where(...).equals(true) để tránh lỗi TypeScript với boolean
+    const allBookmarked = await db.entries.filter(e => e.isBookmarked === true).toArray();
     const now = new Date();
-    // Lọc những bài update lần cuối cách đây > 28 ngày
     return allBookmarked.filter(e => differenceInDays(now, new Date(e.updatedAt)) > 28).length;
   });
 
   const handleComplete = async (id: number) => {
     if (navigator.vibrate) navigator.vibrate(50);
     await db.entries.update(id, { status: 'completed', completedAt: new Date(), isFocus: false });
-    const event = new CustomEvent('cme-gained', { detail: { points: 10, actionType: 'focus_done' } });
+    const event = new CustomEvent('cme-gained', { detail: { points: 10, actionType: 'task_done' } }); // Đã sửa actionType khớp với db
     window.dispatchEvent(event);
   };
 
   return (
     <div className="w-full space-y-3">
-      {/* Header nhỏ */}
       <div className="flex items-center gap-2 px-2 opacity-50">
         <Target size={14} className="text-blue-600" />
         <span className="text-[10px] font-bold uppercase tracking-widest">Tiêu điểm</span>
       </div>
 
-      {/* Grid 2x2 cho Tasks */}
       <div className="grid grid-cols-2 gap-2">
         {focusTasks?.map((task) => (
           <motion.div 
@@ -64,7 +61,6 @@ export const FocusZone = () => {
           </motion.div>
         ))}
         
-        {/* Empty States (Placeholder nếu chưa đủ 4 task) */}
         {Array.from({ length: 4 - (focusTasks?.length || 0) }).map((_, i) => (
           <div key={`empty-${i}`} className="border-2 border-dashed border-slate-100 rounded-2xl min-h-[80px] flex items-center justify-center opacity-50">
              <span className="text-[10px] text-slate-300 font-medium">Trống</span>
@@ -72,12 +68,11 @@ export const FocusZone = () => {
         ))}
       </div>
 
-      {/* CARD: HẠT GIỐNG LÃNG QUÊN (Chỉ hiện khi có > 0) */}
       {forgottenSeedsCount && forgottenSeedsCount > 0 ? (
         <motion.div 
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
           className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-3 cursor-pointer active:scale-95 transition-transform"
-          onClick={() => alert(`Hãy sang tab Nhật Ký để xem ${forgottenSeedsCount} hạt giống này nhé!`)} // Sau này có thể navigate
+          onClick={() => alert(`Hãy sang tab Nhật Ký để xem ${forgottenSeedsCount} hạt giống này nhé!`)}
         >
           <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
             <History size={16} />

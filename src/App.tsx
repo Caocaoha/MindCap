@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // <--- FIX LỖI 1: THÊM REACT
 import { MindInput } from './components/MindInput';
 import { NewSaBan } from './components/NewSaBan';
 import { FocusZone } from './components/FocusZone';
@@ -81,12 +81,10 @@ function App() {
       <main className="flex-1 overflow-hidden bg-slate-50/30 relative flex flex-col">
         {activeTab === 'mind' && (
           <div className="flex flex-col h-full w-full">
-            {/* FIX: Luôn hiển thị FocusZone, không dùng điều kiện ẩn */}
             <div className="shrink-0 z-50 pt-2 px-2 pb-2 bg-slate-50/30 transition-all duration-300">
                <FocusZone />
             </div>
             
-            {/* MindInput chiếm phần còn lại và cho phép scroll nếu cần */}
             <div className="flex-1 flex flex-col justify-center relative z-0 px-4 pb-4 overflow-y-auto">
                <MindInput 
                  onFocusChange={setIsInputFocused} 
