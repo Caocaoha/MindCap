@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react'; // <--- ĐÃ THÊM REACT VÀO ĐÂY
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Entry } from '../db';
 import { getLevelInfo } from '../utils/gamification';
