@@ -7,38 +7,52 @@ import clsx from 'clsx';
 interface EditModalProps {
   entry: Entry;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (updatedEntry: Entry) => void; // Update type để trả về entry mới
 }
+
+// Helper Safe Date
+const formatDateSafe = (date: Date | string | undefined) => {
+  try {
+    if (!date) return "Hôm nay";
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "Hôm nay";
+    return d.toLocaleDateString('vi-VN');
+  } catch {
+    return "Hôm nay";
+  }
+};
 
 export const EditModal = ({ entry, onClose, onSave }: EditModalProps) => {
   const [content, setContent] = useState(entry.content);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSave = async () => {
     if (!content.trim()) return;
     
-    // Cập nhật nội dung + Reset Spaced Repetition (coi như học lại từ đầu)
-    await db.entries.update(entry.id!, { 
+    // Tạo object update
+    const changes = { 
       content, 
       updatedAt: new Date(),
-      // Reset review cycle: hiện lại sau 10 phút
       nextReviewAt: new Date(Date.now() + 10 * 60000), 
       metadata: { ...entry.metadata, reviewCount: 0 } 
-    });
+    };
+
+    await db.entries.update(entry.id!, changes);
     
-    onSave();
+    // Trả về entry đã merge dữ liệu mới để UI update ngay
+    onSave({ ...entry, ...changes });
   };
 
   const handleDelete = async () => {
     if (confirm('Bạn chắc chắn muốn xóa?')) {
       await db.entries.delete(entry.id!);
-      onSave(); // Trigger refresh
+      onSave(entry); // Giá trị này không quan trọng vì đã xóa
+      onClose();
     }
   };
 
   return (
-    // BACKDROP BLUR (CINEMA MODE): backdrop-blur-md làm mờ mọi thứ phía sau
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
+    // Z-INDEX 9999 + Backdrop Blur
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }} 
         animate={{ scale: 1, opacity: 1 }}
@@ -47,7 +61,6 @@ export const EditModal = ({ entry, onClose, onSave }: EditModalProps) => {
       >
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">
-            {/* FIX TEXT THEO YÊU CẦU */}
             Sửa bản ghi
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={18} className="text-slate-400"/></button>
@@ -63,7 +76,8 @@ export const EditModal = ({ entry, onClose, onSave }: EditModalProps) => {
           />
           
           <div className="mt-4 flex items-center justify-between text-xs text-slate-400 font-mono">
-             <div className="flex items-center gap-1"><Calendar size={12}/> <span>{new Date(entry.createdAt).toLocaleDateString('vi-VN')}</span></div>
+             {/* FIX HIỂN THỊ NGÀY */}
+             <div className="flex items-center gap-1"><Calendar size={12}/> <span>{formatDateSafe(entry.createdAt)}</span></div>
              {entry.type === 'task' && <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-md font-bold">{entry.quantity} {entry.unit}</div>}
           </div>
         </div>

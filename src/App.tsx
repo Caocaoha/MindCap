@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'; // <--- FIX LỖI 1: THÊM REACT
+import React, { useState, useEffect } from 'react';
 import { MindInput } from './components/MindInput';
 import { NewSaBan } from './components/NewSaBan';
 import { FocusZone } from './components/FocusZone';
@@ -15,10 +15,12 @@ import {
   Brain, ListTodo, Fingerprint, Map, Settings, PartyPopper 
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import clsx from 'clsx';
 
 function App() {
   const [activeTab, setActiveTab] = useState<'todo' | 'mind' | 'journey'>('mind');
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   
   const [showIdentity, setShowIdentity] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -70,7 +72,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      <header className="flex items-center justify-between px-6 pb-2 border-b border-slate-50 bg-white/80 backdrop-blur-md z-40 relative pt-[calc(env(safe-area-inset-top)+1rem)]">
+      <header className={clsx("flex items-center justify-between px-6 pb-2 border-b border-slate-50 bg-white/80 backdrop-blur-md z-40 relative pt-[calc(env(safe-area-inset-top)+1rem)] transition-all duration-300", isEditing && "blur-sm grayscale opacity-30 pointer-events-none")}>
         <button onClick={() => setShowSettings(true)} className="p-2 text-slate-300 hover:text-slate-600 transition-colors"><Settings size={20} /></button>
         <button onClick={() => setShowIdentity(true)} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-white transition-all shadow-sm active:scale-95 group absolute left-1/2 -translate-x-1/2 bottom-1">
           <Fingerprint size={24} strokeWidth={1.5} className="group-hover:animate-pulse"/>
@@ -78,18 +80,27 @@ function App() {
         <div className="w-9 h-9"></div>
       </header>
 
-      <main className="flex-1 overflow-hidden bg-slate-50/30 relative flex flex-col">
+      <main className={clsx("flex-1 overflow-hidden bg-slate-50/30 relative flex flex-col transition-all duration-300", isEditing && "blur-sm grayscale opacity-50 pointer-events-none")}>
         {activeTab === 'mind' && (
-          <div className="flex flex-col h-full w-full">
-            <div className="shrink-0 z-50 pt-2 px-2 pb-2 bg-slate-50/30 transition-all duration-300">
-               <FocusZone />
-            </div>
+          <div className="flex flex-col h-full w-full relative">
+            {!isInputFocused && (
+              <div className="shrink-0 z-50 pt-2 px-2 pb-2 bg-slate-50/30">
+                 <FocusZone />
+              </div>
+            )}
             
-            <div className="flex-1 flex flex-col justify-center relative z-0 px-4 pb-4 overflow-y-auto">
+            <div className={clsx(
+              "flex-1 flex flex-col px-4 transition-all duration-500",
+              // LOGIC THAY ĐỔI Ở ĐÂY:
+              // - Khi Focus: justify-start, pt-4 (Bay lên trên)
+              // - Khi Blur: justify-end, pb-0 (Bám sát đáy, bỏ padding bottom thừa)
+              isInputFocused ? "justify-start pt-4 bg-white/50" : "justify-end pb-0"
+            )}>
                <MindInput 
                  onFocusChange={setIsInputFocused} 
                  derivedEntry={derivedEntry}
                  onClearDerived={() => setDerivedEntry(null)}
+                 setAppEditingMode={setIsEditing} 
                />
             </div>
           </div>
@@ -102,7 +113,7 @@ function App() {
         )}
       </main>
 
-      <nav className="h-20 bg-white border-t border-slate-100 flex items-center justify-around px-6 pb-6 pt-2 z-50 pb-safe shrink-0">
+      <nav className={clsx("h-20 bg-white border-t border-slate-100 flex items-center justify-around px-6 pb-6 pt-2 z-50 pb-safe shrink-0 transition-all duration-300", isEditing && "blur-sm grayscale opacity-30 pointer-events-none")}>
         <button onClick={() => setActiveTab('todo')} className={`p-3 rounded-2xl transition-all duration-300 ${activeTab === 'todo' ? 'bg-blue-50 text-blue-600 scale-105' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-500'}`}><ListTodo size={26} strokeWidth={activeTab === 'todo' ? 2.5 : 2} /></button>
         <button onClick={() => setActiveTab('mind')} className={`p-4 rounded-full transition-all duration-300 border-4 shadow-lg active:scale-95 ${activeTab === 'mind' ? 'bg-blue-600 text-white border-blue-50 -translate-y-5 shadow-blue-200' : 'bg-white text-slate-300 border-transparent'}`}><Brain size={32} strokeWidth={activeTab === 'mind' ? 2.5 : 2} /></button>
         <button onClick={() => setActiveTab('journey')} className={`p-3 rounded-2xl transition-all duration-300 ${activeTab === 'journey' ? 'bg-blue-50 text-blue-600 scale-105' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-500'}`}><Map size={26} strokeWidth={activeTab === 'journey' ? 2.5 : 2} /></button>

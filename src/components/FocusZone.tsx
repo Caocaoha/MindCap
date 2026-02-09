@@ -1,32 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Entry } from '../db';
-import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-motion';
-import { Target, CheckCircle2, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Target, CheckCircle2, Sparkles, ChevronUp, ChevronDown, History } from 'lucide-react';
 import clsx from 'clsx';
 import { calculateNextReview } from '../utils/scheduler';
+import { differenceInDays } from 'date-fns';
 
-// --- SUB-COMPONENT: NO-UI CONTROLLER ---
 const ProgressControl = ({ task, onUpdate }: { task: Entry, onUpdate: (id: number, val: number) => void }) => {
   const [val, setVal] = useState(task.progress || 0);
   const [isHolding, setIsHolding] = useState(false);
   const holdTimer = useRef<any>(null);
   const startY = useRef(0);
   
-  // Logic phân loại cơ chế
   const isSmallTarget = task.quantity <= 10; 
   const isDialMode = !isSmallTarget;
 
-  // 1. TAP TO STEP (Cho số nhỏ)
   const handleTap = () => {
     if (isDialMode) return;
-    const nextVal = Math.min(val + 1, task.quantity);
+    const nextVal = val + 1;
     setVal(nextVal);
     onUpdate(task.id!, nextVal);
-    if (navigator.vibrate) navigator.vibrate(10); // Haptic light
+    if (navigator.vibrate) navigator.vibrate(10);
   };
 
-  // 2. VERTICAL DIAL (Cho số lớn) - Vuốt lên/xuống
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!isDialMode) return;
     startY.current = e.touches[0].clientY;
@@ -34,14 +31,14 @@ const ProgressControl = ({ task, onUpdate }: { task: Entry, onUpdate: (id: numbe
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDialMode) return;
-    const deltaY = startY.current - e.touches[0].clientY; // Kéo lên = dương
-    const step = Math.floor(deltaY / 20); // 20px = 1 unit (Độ nhạy)
+    const deltaY = startY.current - e.touches[0].clientY;
+    const step = Math.floor(deltaY / 20);
     
     if (step !== 0) {
-      const nextVal = Math.max(0, Math.min(task.progress + step, task.quantity));
+      const nextVal = Math.max(0, task.progress + step);
       if (nextVal !== val) {
         setVal(nextVal);
-        if (navigator.vibrate) navigator.vibrate(15); // Haptic thump
+        if (navigator.vibrate) navigator.vibrate(15);
       }
     }
   };
@@ -50,17 +47,15 @@ const ProgressControl = ({ task, onUpdate }: { task: Entry, onUpdate: (id: numbe
     if (isDialMode && val !== task.progress) onUpdate(task.id!, val);
   };
 
-  // 3. HOLD TO FILL (Cho Progress Bar)
   const startHold = () => {
     setIsHolding(true);
     let speed = 100;
     const loop = () => {
       setVal(prev => {
-        const next = Math.min(prev + (task.quantity / 50), task.quantity); // Tăng dần
-        if (next >= task.quantity && navigator.vibrate) navigator.vibrate([30, 50, 30]); // Rung khi đầy
+        const next = prev + (task.quantity / 50); 
         return next;
       });
-      speed = Math.max(20, speed * 0.9); // Gia tốc: càng giữ càng nhanh
+      speed = Math.max(20, speed * 0.9);
       holdTimer.current = setTimeout(loop, speed);
     };
     loop();
@@ -77,7 +72,6 @@ const ProgressControl = ({ task, onUpdate }: { task: Entry, onUpdate: (id: numbe
   return (
     <div className="mt-2 select-none">
       <div className="flex justify-between items-end mb-1">
-        {/* VÙNG SỐ: TAP HOẶC DIAL */}
         <div 
           className={clsx("text-2xl font-black leading-none cursor-ns-resize flex items-center gap-1 active:scale-110 transition-transform", isDialMode ? "text-blue-600" : "text-slate-700")}
           onClick={handleTap}
@@ -91,17 +85,12 @@ const ProgressControl = ({ task, onUpdate }: { task: Entry, onUpdate: (id: numbe
         </div>
       </div>
 
-      {/* VÙNG THANH BAR: HOLD TO FILL */}
       <div 
         className={clsx("h-2 bg-slate-100 rounded-full overflow-hidden relative touch-none", isHolding ? "ring-2 ring-blue-200" : "")}
         onMouseDown={startHold} onMouseUp={stopHold} onMouseLeave={stopHold}
         onTouchStart={startHold} onTouchEnd={stopHold}
       >
-        <motion.div 
-          className="h-full bg-blue-500 rounded-full relative"
-          style={{ width: `${percent}%` }}
-          layout
-        >
+        <motion.div className="h-full bg-blue-500 rounded-full relative" style={{ width: `${percent}%` }} layout>
           {isHolding && <div className="absolute right-0 top-0 bottom-0 w-2 bg-white/50 blur-[2px] animate-pulse" />}
         </motion.div>
       </div>
@@ -109,7 +98,6 @@ const ProgressControl = ({ task, onUpdate }: { task: Entry, onUpdate: (id: numbe
   );
 };
 
-// --- MAIN COMPONENT ---
 export const FocusZone = () => {
   const focusTasks = useLiveQuery(() => 
     db.entries
@@ -119,21 +107,17 @@ export const FocusZone = () => {
       .toArray()
   );
 
-  // LOGIC MEMORY SPARK (SPACED REPETITION)
-  // Chỉ lấy 1 bài cần ôn tập ngay lúc này (nextReviewAt <= now)
   const memorySpark = useLiveQuery(async () => {
     const now = new Date();
-    // Query siêu nhẹ nhờ Index
-    const dueEntry = await db.entries
-      .where('nextReviewAt').belowOrEqual(now)
-      .first();
+    const dueEntry = await db.entries.where('nextReviewAt').belowOrEqual(now).first();
     return dueEntry;
   });
 
-  const handleUpdateProgress = async (id: number, newVal: number) => {
-    await db.entries.update(id, { progress: newVal });
-    if (navigator.vibrate) navigator.vibrate(10);
-  };
+  const forgottenSeedsCount = useLiveQuery(async () => {
+    const allBookmarked = await db.entries.filter(e => e.isBookmarked === true).toArray();
+    const now = new Date();
+    return allBookmarked.filter(e => differenceInDays(now, new Date(e.updatedAt)) > 28).length;
+  });
 
   const handleComplete = async (id: number) => {
     if (navigator.vibrate) navigator.vibrate(50);
@@ -141,19 +125,21 @@ export const FocusZone = () => {
     window.dispatchEvent(new CustomEvent('cme-gained', { detail: { points: 10, actionType: 'task_done' } }));
   };
 
-  const handleSparkInteraction = async (entry: Entry) => {
-    // 1. Điều hướng sang Journey (Giả lập bằng alert hoặc logic chuyển tab)
-    // Ở đây ta tạm thời alert, thực tế nên dùng callback chuyển tab
-    if (confirm('Đi đến Nhật ký để xem chi tiết?')) {
-       // Code chuyển tab ở App level sẽ handle việc này sau
+  const handleUpdateProgress = async (id: number, newVal: number, target: number) => {
+    if (newVal >= target) {
+      handleComplete(id);
+    } else {
+      await db.entries.update(id, { progress: newVal });
+      if (navigator.vibrate) navigator.vibrate(10);
     }
+  };
 
-    // 2. Cập nhật Next Review Date (Chuyển sang chu kỳ tiếp theo)
+  const handleSparkInteraction = async (entry: Entry) => {
+    if (confirm('Đi đến Nhật ký để xem chi tiết?')) { /* Navigate logic */ }
     const currentReviewCount = entry.metadata?.reviewCount || 0;
     const nextDate = calculateNextReview(currentReviewCount + 1, entry.isBookmarked);
-    
     await db.entries.update(entry.id!, {
-      nextReviewAt: nextDate, // Nếu undefined nghĩa là xong chu trình -> null
+      nextReviewAt: nextDate,
       metadata: { ...entry.metadata, reviewCount: currentReviewCount + 1 }
     });
   };
@@ -165,23 +151,14 @@ export const FocusZone = () => {
         <span className="text-[10px] font-bold uppercase tracking-widest">Tiêu điểm</span>
       </div>
 
-      {/* Grid Tasks */}
       <div className="grid grid-cols-2 gap-2">
         {focusTasks?.map((task) => (
-          <div 
-            key={task.id} 
-            className={clsx(
-              "p-3 rounded-2xl border flex flex-col justify-between min-h-[100px] relative bg-white border-slate-100 shadow-sm",
-              task.priority === 'critical' && "border-l-4 border-l-red-500"
-            )}
-          >
+          <div key={task.id} className={clsx("p-3 rounded-2xl border flex flex-col justify-between min-h-[100px] bg-white border-slate-100 shadow-sm", task.priority === 'critical' && "border-l-4 border-l-red-500")}>
             <div className="flex justify-between items-start">
                <p className="text-xs font-bold line-clamp-2 text-slate-700 leading-tight">{task.content}</p>
                <button onClick={() => handleComplete(task.id!)} className="text-slate-300 hover:text-green-500 transition-colors"><CheckCircle2 size={18}/></button>
             </div>
-            
-            {/* NO-UI CONTROLLER */}
-            <ProgressControl task={task} onUpdate={handleUpdateProgress} />
+            <ProgressControl task={task} onUpdate={(id, val) => handleUpdateProgress(id, val, task.quantity)} />
           </div>
         ))}
         {Array.from({ length: 4 - (focusTasks?.length || 0) }).map((_, i) => (
@@ -189,26 +166,27 @@ export const FocusZone = () => {
         ))}
       </div>
 
-      {/* MEMORY SPARK (HIỂN THỊ DƯỚI TASKS) */}
       <AnimatePresence>
         {memorySpark && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
-            className="bg-gradient-to-r from-violet-50 to-fuchsia-50 border border-violet-100 rounded-xl p-3 flex gap-3 cursor-pointer shadow-sm relative overflow-hidden group"
-            onClick={() => handleSparkInteraction(memorySpark)}
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="bg-gradient-to-r from-violet-50 to-fuchsia-50 border border-violet-100 rounded-xl p-3 flex gap-3 cursor-pointer shadow-sm relative overflow-hidden group" onClick={() => handleSparkInteraction(memorySpark)}>
             <div className="w-1 bg-violet-400 absolute left-0 top-0 bottom-0"/>
             <div className="p-2 bg-white rounded-full h-fit shadow-sm text-violet-500"><Sparkles size={16}/></div>
             <div className="flex-1 min-w-0">
                <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wider">Gợi nhớ ({memorySpark.isBookmarked ? 'Hạt giống' : 'Thoáng qua'})</span>
-                  <span className="text-[9px] text-slate-400">Chạm để đọc</span>
                </div>
                <p className="text-xs text-slate-700 italic line-clamp-2">"{memorySpark.content}"</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {forgottenSeedsCount && forgottenSeedsCount > 0 ? (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-3 cursor-pointer active:scale-95 transition-transform" onClick={() => alert(`Hãy sang tab Nhật Ký để xem ${forgottenSeedsCount} hạt giống này nhé!`)}>
+          <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0"><History size={16} /></div>
+          <div><p className="text-xs font-bold text-amber-800">Ký ức ngủ quên</p><p className="text-[10px] text-amber-600">Có {forgottenSeedsCount} ý tưởng đã quá 28 ngày chưa tưới.</p></div>
+        </motion.div>
+      ) : null}
     </div>
   );
 };
