@@ -8,6 +8,7 @@ import { CmeToast } from './components/CmeToast';
 import { SettingsModal } from './components/SettingsModal';
 import { ReloadPrompt } from './components/ReloadPrompt';
 import { OfflineWarning } from './components/OfflineWarning';
+import { EditModal } from './components/EditModal'; // IMPORT MỚI
 import { type Entry } from './db';
 
 import { AnimatePresence, motion } from 'framer-motion';
@@ -20,7 +21,10 @@ import clsx from 'clsx';
 function App() {
   const [activeTab, setActiveTab] = useState<'todo' | 'mind' | 'journey'>('mind');
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  
+  // THAY ĐỔI: Quản lý Entry đang sửa tại App (Global State)
+  const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const isEditing = !!editingEntry; // Tự động bật Cinema Mode khi có Entry đang sửa
   
   const [showIdentity, setShowIdentity] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -55,9 +59,23 @@ function App() {
       <OfflineWarning />
       <CmeToast />
 
-      <AnimatePresence mode="wait">
+      {/* MODAL LAYER (Nằm ngoài Main để không bị khóa chuột) */}
+      <AnimatePresence>
         {showIdentity && <IdentityTab onClose={() => setShowIdentity(false)} />}
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+        
+        {/* EDIT MODAL: Được render ở đây, đè lên tất cả */}
+        {editingEntry && (
+          <EditModal 
+            entry={editingEntry} 
+            onClose={() => setEditingEntry(null)} 
+            onSave={(updated) => {
+              // Logic sau khi save (nếu cần reload list thì db.hook sẽ lo)
+              setEditingEntry(null);
+            }} 
+          />
+        )}
+
         {showLevelUp !== null && (
           <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowLevelUp(null)}>
             <div className="bg-white p-8 rounded-3xl text-center shadow-2xl relative overflow-hidden">
@@ -80,6 +98,7 @@ function App() {
         <div className="w-9 h-9"></div>
       </header>
 
+      {/* MAIN CONTENT: Sẽ bị mờ và khóa chuột khi isEditing = true */}
       <main className={clsx("flex-1 overflow-hidden bg-slate-50/30 relative flex flex-col transition-all duration-300", isEditing && "blur-sm grayscale opacity-50 pointer-events-none")}>
         {activeTab === 'mind' && (
           <div className="flex flex-col h-full w-full relative">
@@ -91,16 +110,13 @@ function App() {
             
             <div className={clsx(
               "flex-1 flex flex-col px-4 transition-all duration-500",
-              // LOGIC THAY ĐỔI Ở ĐÂY:
-              // - Khi Focus: justify-start, pt-4 (Bay lên trên)
-              // - Khi Blur: justify-end, pb-0 (Bám sát đáy, bỏ padding bottom thừa)
               isInputFocused ? "justify-start pt-4 bg-white/50" : "justify-end pb-0"
             )}>
                <MindInput 
                  onFocusChange={setIsInputFocused} 
                  derivedEntry={derivedEntry}
                  onClearDerived={() => setDerivedEntry(null)}
-                 setAppEditingMode={setIsEditing} 
+                 onEdit={(entry) => setEditingEntry(entry)} // TRUYỀN HÀM MỞ MODAL
                />
             </div>
           </div>

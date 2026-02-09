@@ -9,11 +9,8 @@ import { db, type Entry } from '../db';
 import { addXp } from '../utils/gamification';
 import { smartParser, type NlpResult } from '../utils/nlpParser';
 import { echoEngine } from '../utils/echoEngine';
-import { EditModal } from './EditModal';
+// XÓA: import { EditModal } from './EditModal'; (Đã chuyển lên App)
 import clsx from 'clsx';
-
-// ... (Giữ nguyên Types và ActionToast) ...
-// (Phần import và ActionToast không thay đổi, tôi lược bớt để tập trung vào MindInput component)
 
 type SectorType = 'TASK_NORMAL' | 'TASK_IMPORTANT' | 'TASK_URGENT' | 'TASK_CRITICAL' | 
                   'MOOD_HAPPY' | 'MOOD_NEUTRAL' | 'MOOD_SAD' | null;
@@ -22,9 +19,12 @@ interface MindInputProps {
   onFocusChange?: (focused: boolean) => void;
   derivedEntry?: Entry | null;
   onClearDerived?: () => void;
-  setAppEditingMode?: (isEditing: boolean) => void;
+  // Thay thế setAppEditingMode bằng onEdit trực tiếp
+  onEdit?: (entry: Entry) => void;
+  setAppEditingMode?: (isEditing: boolean) => void; // Vẫn giữ để tương thích nếu cần, nhưng logic chính giờ nằm ở App
 }
 
+// ActionToast nhận prop onEdit từ MindInput
 const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any) => {
   useEffect(() => { const t = setTimeout(onClose, 5000); return () => clearTimeout(t); }, [onClose]);
   return (
@@ -44,14 +44,14 @@ const ActionToast = ({ message, type, nlpSummary, onUndo, onEdit, onClose }: any
   );
 };
 
-export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppEditingMode }: MindInputProps) => {
+export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, onEdit }: MindInputProps) => {
   const [input, setInput] = useState('');
   const [activeSector, setActiveSector] = useState<SectorType>(null);
   const [activeDragType, setActiveDragType] = useState<'TASK' | 'MOOD' | null>(null);
   const [nlpData, setNlpData] = useState<NlpResult | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [lastSaved, setLastSaved] = useState<any>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+  // XÓA: const [showEditModal, setShowEditModal] = useState(false);
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const [moodLevel, setMoodLevel] = useState<0 | 1>(0);
   
@@ -65,8 +65,12 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
   const moodX = useMotionValue(0); const moodY = useMotionValue(0);
 
   useEffect(() => {
+    // Logic Shortcuts... (Giữ nguyên)
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (!showEditModal && !isTyping && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Auto-focus check (bỏ check showEditModal vì modal giờ nằm ở App, khi modal mở thì input bị blur rồi)
+      if (!isTyping && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Cần check thêm nếu đang có modal editing ở App thì không focus. 
+        // Tuy nhiên do App set pointer-events-none cho Main chứa Input này nên cũng an toàn.
         inputRef.current?.focus();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (input.trim()) executeSave('MOOD_NEUTRAL'); }
@@ -74,7 +78,7 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [input, isTyping, showEditModal]);
+  }, [input, isTyping]);
 
   useEffect(() => { if (derivedEntry) { setInput(''); inputRef.current?.focus(); } }, [derivedEntry]);
   
@@ -85,6 +89,7 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => { setInput(e.target.value); if(toast) setToast(null); setIsTyping(e.target.value.length > 0); };
 
   const executeSave = async (targetSector: SectorType) => {
+    // ... Logic Save giữ nguyên ...
     if (!input.trim() || !targetSector) return;
     const now = new Date();
     const finalNlp = nlpData || { quantity: 1, unit: 'lần', frequency: 'once', detected: false };
@@ -156,10 +161,24 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
 
   return (
     <div className="relative w-full flex flex-col items-center justify-start min-h-[400px]">
-      <AnimatePresence>{toast && <ActionToast message={toast.msg} type={toast.type} onUndo={async () => { if(!lastSaved?.id) return; await db.entries.delete(lastSaved.id); setInput(lastSaved.content); setToast({ msg: 'Đã hoàn tác!', type: 'success' }); }} onEdit={() => {setShowEditModal(true); setAppEditingMode?.(true);}} onClose={()=>setToast(null)} />}</AnimatePresence>
-      {showEditModal && lastSaved && <EditModal entry={lastSaved} onClose={() => {setShowEditModal(false); setAppEditingMode?.(false);}} onSave={(updated) => {setLastSaved(updated); setShowEditModal(false); setAppEditingMode?.(false);}} />}
+      <AnimatePresence>
+        {toast && (
+          <ActionToast 
+            message={toast.msg} 
+            type={toast.type} 
+            onUndo={async () => { if(!lastSaved?.id) return; await db.entries.delete(lastSaved.id); setInput(lastSaved.content); setToast({ msg: 'Đã hoàn tác!', type: 'success' }); }} 
+            onEdit={() => {
+              // GỌI HÀM CỦA APP ĐỂ MỞ MODAL
+              if (lastSaved && onEdit) onEdit(lastSaved);
+            }} 
+            onClose={()=>setToast(null)} 
+          />
+        )}
+      </AnimatePresence>
+      
+      {/* XÓA: {showEditModal && lastSaved && ...} */}
 
-      {/* --- TEXTAREA CARD (Đã giảm mb-8 xuống mb-2) --- */}
+      {/* --- TEXTAREA CARD --- */}
       <motion.div 
         animate={{ opacity: activeDragType ? 0.1 : 1, scale: activeDragType ? 0.95 : 1, filter: activeDragType ? "blur(4px)" : "blur(0px)" }} 
         className={clsx("w-full max-w-sm h-48 bg-white rounded-3xl border border-slate-100 p-6 flex flex-col items-center justify-center relative transition-all duration-300 shadow-sm mb-2", activeDragType ? "z-0" : "z-20")}
@@ -169,42 +188,19 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
         <AnimatePresence>{derivedEntry && (<motion.div initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-bold shadow-lg whitespace-nowrap">🔗 Phái sinh</motion.div>)}</AnimatePresence>
       </motion.div>
 
-      {/* --- CONTROLS CONTAINER (ABSOLUTE LAYOUT) --- */}
+      {/* --- CONTROLS CONTAINER --- */}
       <AnimatePresence>
         {input.length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="w-full max-w-sm h-24 relative z-10" 
-          >
-            {/* TASK BUTTON */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="w-full max-w-sm h-24 relative z-10" >
+            {/* ... Giữ nguyên phần nút Task/Mood ... */}
             <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center">
-              <motion.div 
-                ref={taskBtnRef}
-                drag dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} dragElastic={1}
-                onDragStart={() => handleDragStart('TASK')}
-                onDrag={(_, info) => handleDrag(info, 'TASK')}
-                onDragEnd={() => { if(activeSector) executeSave(activeSector); setActiveDragType(null); setActiveSector(null); }}
-                style={{ x: taskX, y: taskY }}
-                animate={{ opacity: activeDragType === 'MOOD' ? 0.3 : 1 }}
-                className="p-5 rounded-full bg-white border-2 border-slate-100 shadow-xl cursor-grab active:cursor-grabbing relative z-50"
-              >
+              <motion.div ref={taskBtnRef} drag dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} dragElastic={1} onDragStart={() => handleDragStart('TASK')} onDrag={(_, info) => handleDrag(info, 'TASK')} onDragEnd={() => { if(activeSector) executeSave(activeSector); setActiveDragType(null); setActiveSector(null); }} style={{ x: taskX, y: taskY }} animate={{ opacity: activeDragType === 'MOOD' ? 0.3 : 1 }} className="p-5 rounded-full bg-white border-2 border-slate-100 shadow-xl cursor-grab active:cursor-grabbing relative z-50">
                 <Layers size={32} className={activeDragType === 'TASK' ? "text-blue-600" : "text-slate-400"} />
               </motion.div>
               <span className="text-[9px] font-black uppercase text-slate-300 mt-2 tracking-widest">Lưu Task</span>
             </div>
-
-            {/* MOOD BUTTON */}
             <div className="absolute right-6 flex flex-col items-center">
-              <motion.div 
-                ref={moodBtnRef}
-                drag dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} dragElastic={1}
-                onDragStart={() => handleDragStart('MOOD')}
-                onDrag={(_, info) => handleDrag(info, 'MOOD')}
-                onDragEnd={() => { if(activeSector) executeSave(activeSector); setActiveDragType(null); setActiveSector(null); setMoodLevel(0); }}
-                style={{ x: moodX, y: moodY }}
-                animate={{ opacity: activeDragType === 'TASK' ? 0.3 : 1 }}
-                className="p-4 rounded-full bg-blue-600 border-2 border-blue-500 shadow-xl cursor-grab active:cursor-grabbing relative z-50"
-              >
+              <motion.div ref={moodBtnRef} drag dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} dragElastic={1} onDragStart={() => handleDragStart('MOOD')} onDrag={(_, info) => handleDrag(info, 'MOOD')} onDragEnd={() => { if(activeSector) executeSave(activeSector); setActiveDragType(null); setActiveSector(null); setMoodLevel(0); }} style={{ x: moodX, y: moodY }} animate={{ opacity: activeDragType === 'TASK' ? 0.3 : 1 }} className="p-4 rounded-full bg-blue-600 border-2 border-blue-500 shadow-xl cursor-grab active:cursor-grabbing relative z-50">
                 <Send size={24} className="text-white" />
               </motion.div>
               <span className="text-[9px] font-black uppercase text-slate-300 mt-3 tracking-widest">Mood</span>
@@ -213,7 +209,8 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
         )}
       </AnimatePresence>
 
-      {/* --- RAILS OVERLAY (SNIPER) --- */}
+      {/* --- RAILS OVERLAY --- */}
+      {/* ... Giữ nguyên phần Rail ... */}
       <AnimatePresence>
         {activeDragType && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] pointer-events-none">
@@ -242,7 +239,7 @@ export const MindInput = ({ onFocusChange, derivedEntry, onClearDerived, setAppE
   );
 };
 
-// ... (Sub-components TargetIcon và DynamicTargetIcon giữ nguyên như cũ)
+// ... Sub-components TargetIcon/DynamicTargetIcon giữ nguyên
 const TargetIcon = ({ sector, icon: Icon, label, active, color }: any) => { 
   const isTarget = active === sector; 
   return (
